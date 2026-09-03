@@ -1,0 +1,125 @@
+# SHOP PACKAGE — Architecture Contract
+
+> Version 2 — Maturity pass. Companion: `karnoweb/commerce` (orders/billing), `karnoweb/translation` (content), `karnoweb/laravel-inventory` (physical stock).
+
+## 0. Non-negotiable principles
+
+1. **The package does not perform host Actions** — no SMS, mail, order creation, accounting posts, or CRM calls.
+2. **The package does not import `App\Models\*`** or other Karnoweb domain packages (`crm`, `accounting`, `hr`, `payment`, `inventory`).
+3. **Soft host keys only** — `user_id`, `branch_id`, `category_id` without cross-package FK constraints.
+4. **Host resolves tenant/branch** — the package never calls `Tenant::current()` or similar.
+5. **Output events fire after DB commit** (when introduced) — same pattern as CRM `CrmEventDispatcher`.
+6. **Catalog only** — orders, invoices, payments, carts-as-orders live in **commerce** (host today, `karnoweb/commerce` target).
+
+## 1. Package boundary
+
+```text
+karnoweb/shop (catalog)
+├── ProductInterface, Product, ProductPrice
+├── Brand, Attribute*, Campaign (shop marketing)
+├── WishList, pricing/filter services
+├── Content via karnoweb/translation (HasTranslation on catalog models)
+└── Events: catalog lifecycle (future)
+
+Host application
+├── App\Models\ProductInterface extends package model + CMS traits
+├── Actions, Livewire admin + web storefront
+├── Bridges: Commerce, CRM, Accounting, Inventory
+└── karnoweb/commerce: Order, Invoice, Payment
+```
+
+**Unit of measure:** use `karnoweb/laravel-inventory` `Uom` / `Inventory::uoms()` — not shop. The legacy `units` table and admin CRUD were retired.
+
+## 2. Host model extension strategy
+
+Lean models live in the package with `Karnoweb\Translation\Concerns\HasTranslation` for translatable fields. The host extends them for:
+
+- `HasCategory`, `HasSeoOption`, `InteractsWithMedia`, `HasTags`, `HasComment`
+- `CLogsActivity`, `HasModelCache`
+- Application enum casts (`BooleanEnum`, `YesNoEnum`) where UI expects them
+
+## 3. Table naming
+
+Existing deployments use **unprefixed** catalog tables (`brands`, `products`). Default `shop.tables.prefix` is empty.
+
+## 4. Morph map
+
+Config `shop.morph_map` registers aliases via `ShopMorphMap::register()` with **merge**, not enforce.
+
+Commerce `OrderItem.itemable` must use config `shop.models.product` for product backfill — not hardcoded `App\Models\Product`.
+
+## 5. Pricing
+
+`product_prices` supports time-windowed prices with two portable scoping strategies:
+
+| Strategy | Column | When to use |
+|----------|--------|-------------|
+| **Tier** | `tier` (string, e.g. `retail`, `wholesale`) | Greenfield / projects without `UserGroup` |
+| **User group** | `user_group_id` (soft FK) | This Karno host (`UserGroupSeeder` retail/wholesale) |
+
+`ProductPriceResolver` order: user group → explicit tier → default (null group) → `base_price`.
+
+Campaign adjustments remain host-bridged via `CampaignPriceAdjuster` contract.
+
+## 6. Integration boundaries
+
+| Domain | Integration |
+|--------|-------------|
+| **Commerce** | Consumes shop sellables via morph; owns Order/Invoice |
+| **Inventory** | `HasInventory` on host Product; shop `stock` column is **legacy/deprecated** |
+| **Translation** | `karnoweb/translation` on Brand, ProductInterface, Attribute* |
+| **CRM** | No product/order creation in CRM package |
+| **Accounting** | Via commerce invoice bridge in host |
+
+## 7. Facade (`Shop`)
+
+Mirrors CRM pattern with **Macroable** extension:
+
+- `Shop::products()` → `ProductService`
+- `Shop::filters()` → `ProductFilterService`
+- `Shop::pricing()` → `ProductPriceResolver`
+- `Shop::config('…')` → shop config
+- `Shop::model('product')` → configured model class (single resolution path for relations)
+- `Shop::macro('featuredSkus', fn () => …)` → host-specific helpers without forking
+
+Storefront session state (wishlist, cart, compare, ratings) is **not** in the catalog core. Host binds `Karnoweb\Shop\Contracts\StorefrontContext` (see `HostStorefrontContext`).
+
+## 7b. Events
+
+`ShopEventDispatcher` mirrors commerce: lean catalog events (e.g. `ProductSaved`) dispatch after DB commit. Host cache invalidation should listen to these instead of model `boot()` when possible.
+
+## 8. Inventory / stock (deferred)
+
+The package still exposes `products.stock`, `scopeInStock()`, and legacy stock accessors for backward compatibility. **Do not use in new code.**
+
+Roadmap (not this pass):
+
+1. Host admin/import/export reads/writes inventory via `Inventory::stock()` instead of `products.stock`
+2. Dual-write on order paid / cart reserve
+3. Drop `stock` column from products after migration period
+
+Host `App\Models\Product::getRemainingStockAttribute()` already dual-reads inventory when installed.
+
+## 9. Extraction phases
+
+| Phase | Content |
+|-------|---------|
+| 0–4 | Scaffold, catalog models, services, commerce package ✅ |
+| 5 | Translation package + wired into catalog models ✅ |
+| 6 | Shop facade service delegation ✅ |
+| 7 | Unit retired → inventory Uom ✅ |
+| 8 | Pricing `tier` column ✅ |
+| 9 | Extensibility pass: Macroable, `model()`, StorefrontContext, ShopEventDispatcher ✅ |
+| 10 | Inventory dual-write + stock column removal ⏳ deferred |
+
+## 10. What must NOT move into shop
+
+- Order, OrderItem, Invoice, Payment, Wallet, Discount (commerce)
+- Warehouse, stock movements, Uom (inventory)
+- Lead, Deal (crm)
+- Accounting documents
+- Admin menu, permissions, module-manager config
+
+## 11. Architecture tests
+
+Run: `cd packages/karnoweb/shop && composer install && vendor/bin/phpunit`

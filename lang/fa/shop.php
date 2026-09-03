@@ -1,0 +1,40 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'attribute' => [
+        'type' => [
+            'text' => 'متن',
+            'color' => 'رنگ',
+            'select' => 'انتخابی',
+            'number' => 'عدد',
+            'checkbox' => 'چک‌باکس',
+        ],
+    ],
+    'product_interface' => [
+        'type' => [
+            'simple' => 'ساده',
+            'codding' => 'تنوع‌دار',
+            'digital' => 'دیجیتال',
+            'service' => 'خدمت',
+        ],
+    ],
+    'campaign' => [
+        'type' => [
+            'product_based' => 'مبتنی بر محصول',
+            'order_based' => 'مبتنی بر سفارش',
+        ],
+        'condition' => [
+            'category' => 'دسته‌بندی',
+            'brand' => 'برند',
+            'product' => 'محصول',
+            'user' => 'کاربر',
+            'user_group' => 'گروه کاربری',
+            'min_order_amount' => 'حداقل مبلغ سفارش',
+            'min_order_count' => 'حداقل تعداد سفارش',
+            'first_order' => 'اولین سفارش',
+            'date_range' => 'بازه زمانی',
+        ],
+    ],
+];
