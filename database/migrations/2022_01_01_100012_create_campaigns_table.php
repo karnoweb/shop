@@ -9,10 +9,12 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Shop marketing campaigns table.
  *
- * Note: also attaches campaign_id FKs on commerce orders/order_items for BC with the
- * original host migration filename. Commerce package should own those alters long-term.
+ * `discount_id` and `created_by` are soft keys: commerce (discounts) and the host
+ * (users) are separate bounded contexts, so this package never adds hard FKs to
+ * their tables. `karnoweb/commerce` owns any FK/columns on `orders`/`order_items`.
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::create('campaigns', function (Blueprint $table) {
@@ -38,47 +40,10 @@ return new class extends Migration {
             $table->index('priority');
             $table->index('campaign_type');
         });
-
-        // Optional commerce FKs when host/commerce tables already exist (BC with original migration).
-        if (Schema::hasTable('discounts')) {
-            Schema::table('campaigns', function (Blueprint $table) {
-                $table->foreign('discount_id')->references('id')->on('discounts')->nullOnDelete();
-            });
-        }
-
-        if (Schema::hasTable('users')) {
-            Schema::table('campaigns', function (Blueprint $table) {
-                $table->foreign('created_by')->references('id')->on('users')->nullOnDelete();
-            });
-        }
-
-        if (Schema::hasTable('orders') && Schema::hasColumn('orders', 'campaign_id')) {
-            Schema::table('orders', function (Blueprint $table) {
-                $table->foreign('campaign_id')->references('id')->on('campaigns')->nullOnDelete();
-            });
-        }
-
-        if (Schema::hasTable('order_items') && Schema::hasColumn('order_items', 'campaign_id')) {
-            Schema::table('order_items', function (Blueprint $table) {
-                $table->foreign('campaign_id')->references('id')->on('campaigns')->nullOnDelete();
-            });
-        }
     }
 
     public function down(): void
     {
-        if (Schema::hasTable('order_items')) {
-            Schema::table('order_items', function (Blueprint $table) {
-                $table->dropForeign(['campaign_id']);
-            });
-        }
-
-        if (Schema::hasTable('orders')) {
-            Schema::table('orders', function (Blueprint $table) {
-                $table->dropForeign(['campaign_id']);
-            });
-        }
-
         Schema::dropIfExists('campaigns');
     }
 };

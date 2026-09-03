@@ -11,7 +11,8 @@ use Illuminate\Support\Facades\Schema;
  *
  * این migration شامل index های بهینه‌سازی برای query های پرکاربرد است.
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         // Product Interfaces indexes
@@ -65,8 +66,18 @@ return new class extends Migration {
         Schema::table('products', function (Blueprint $table) {
             $table->dropIndex('idx_p_interface_published');
             $table->dropIndex('idx_p_published_stock');
-            $table->dropIndex('idx_p_retail_price');
         });
+
+        // idx_p_retail_price targets the legacy retail_price column, which a later
+        // migration (modify_products_table_pricing) may have already dropped/replaced
+        // with base_price without recreating this index on rollback.
+        try {
+            Schema::table('products', function (Blueprint $table) {
+                $table->dropIndex('idx_p_retail_price');
+            });
+        } catch (Throwable) {
+            // Index may already be gone if the pricing migration rolled back first.
+        }
 
         Schema::table('product_interface_attribute_values', function (Blueprint $table) {
             $table->dropIndex('idx_piav_covering');

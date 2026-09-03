@@ -16,7 +16,7 @@ class ShopServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../config/shop.php', 'shop');
+        $this->mergeConfigFrom(__DIR__.'/../config/shop.php', 'shop');
 
         $this->app->singleton('shop', fn ($app) => new Shop(
             $app->make(ProductService::class),
@@ -40,21 +40,21 @@ class ShopServiceProvider extends ServiceProvider
     {
         ShopMorphMap::register();
 
-        $this->loadTranslationsFrom(__DIR__ . '/../lang', 'shop');
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        $this->loadTranslationsFrom(__DIR__.'/../lang', 'shop');
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__ . '/../config/shop.php' => config_path('shop.php'),
+                __DIR__.'/../config/shop.php' => config_path('shop.php'),
             ], 'shop-config');
 
             // Keep fixed 2022_* filenames so published migrations run early and keep stable names.
             $this->publishes([
-                __DIR__ . '/../database/migrations' => database_path('migrations'),
+                __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'shop-migrations');
 
             $this->publishes([
-                __DIR__ . '/../lang' => lang_path('vendor/shop'),
+                __DIR__.'/../lang' => lang_path('vendor/shop'),
             ], 'shop-lang');
         }
     }

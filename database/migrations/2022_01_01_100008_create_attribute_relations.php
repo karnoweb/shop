@@ -6,7 +6,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         // This table links attributes to attribute groups. For example, an attribute 'Screen Size' could be linked to a group 'Mobile Phone'.
@@ -49,9 +50,9 @@ return new class extends Migration {
 
     public function down(): void
     {
+        Schema::dropIfExists('product_attribute_values');
         Schema::dropIfExists('product_interface_attribute_values');
         Schema::dropIfExists('product_interface_attributes');
         Schema::dropIfExists('attribute_attribute_group');
-        Schema::dropIfExists('attribute_groups');
     }
 };
