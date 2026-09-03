@@ -48,6 +48,11 @@ class ShopServiceProvider extends ServiceProvider
                 __DIR__ . '/../config/shop.php' => config_path('shop.php'),
             ], 'shop-config');
 
+            // Keep fixed 2022_* filenames so published migrations run early and keep stable names.
+            $this->publishes([
+                __DIR__ . '/../database/migrations' => database_path('migrations'),
+            ], 'shop-migrations');
+
             $this->publishes([
                 __DIR__ . '/../lang' => lang_path('vendor/shop'),
             ], 'shop-lang');

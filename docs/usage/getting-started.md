@@ -3,11 +3,12 @@
 ```bash
 composer require karnoweb/shop:^13.0
 php artisan vendor:publish --tag=shop-config
-php artisan vendor:publish --tag=shop-lang   # اختیاری
+php artisan vendor:publish --tag=shop-migrations   # الزامی
+php artisan vendor:publish --tag=shop-lang         # اختیاری
 php artisan migrate
 ```
 
-مایگریشن‌ها از پکیج به‌صورت خودکار لود می‌شوند. جداول پیش‌فرض بدون پیشوندند (`products`, `brands`, …)؛ در صورت نیاز:
+مایگریشن‌ها با تاریخ ثابت `2022_01_01_100*` پابلیش می‌شوند تا زود اجرا شوند و نام فایل‌ها پایدار بماند. جداول پیش‌فرض بدون پیشوندند (`products`, `brands`, …)؛ در صورت نیاز:
 
 ```env
 SHOP_TABLE_PREFIX=

@@ -16,6 +16,7 @@
 ```bash
 composer require karnoweb/shop:^13.0
 php artisan vendor:publish --tag=shop-config
+php artisan vendor:publish --tag=shop-migrations
 php artisan vendor:publish --tag=shop-lang   # اختیاری
 php artisan migrate
 ```
