@@ -1,29 +1,50 @@
-# Karnoweb Shop Package
+# Karnoweb Shop
 
-Catalog domain package for Karno Base: products, brands, attributes, units, and pricing services.
+پکیج دامنهٔ **کاتالوگ** برای لاراول: محصول، برند، ویژگی، قیمت‌گذاری پنجره‌ای، کمپین فروشگاهی و علاقه‌مندی.
 
-Follows the same **data + services + events** boundary as `karnoweb/crm`. See `SHOP_PACKAGE.md` for the architecture contract.
+**مستندات:** [docs/README.md](docs/README.md) — [مفاهیم](docs/concepts/README.md) و [طرز استفاده](docs/usage/README.md)  
+قرارداد معماری (انگلیسی): [SHOP_PACKAGE.md](SHOP_PACKAGE.md)
 
-## Install (monorepo host)
+## Requirements
+
+- PHP 8.3+
+- Laravel 13.x
+- `karnoweb/translation` ^13.0
+
+## Installation
 
 ```bash
 composer require karnoweb/shop:^13.0
 php artisan vendor:publish --tag=shop-config
+php artisan vendor:publish --tag=shop-lang   # اختیاری
 php artisan migrate
 ```
 
-## Scope
+## قابلیت‌ها (v13.0)
 
-| In package | In host application |
-|------------|---------------------|
-| Catalog models & migrations | Livewire admin + storefront UI |
-| Catalog services | Actions & Pipelines |
-| Output events (after commit) | Permissions, menu, routes |
-| Config & morph map | Bridges to CRM, Commerce, Accounting, Inventory |
+از فاساد `Shop` برای سرویس‌های کاتالوگ استفاده کنید.
 
-**Not in this package:** orders, invoices, payments, wallets — those belong to `karnoweb/commerce` (planned).
+| حوزه | دسترسی | نقش |
+|------|--------|------|
+| قیمت | `Shop::pricing()` | resolve قیمت عددی |
+| کارت محصول | `Shop::products()` | قیمت + فلگ‌های ویترین |
+| فیلتر | `Shop::filters()` | دسته، برند، ویژگی، بازه قیمت |
+| مدل‌ها | `Shop::model()` | کلاس مدل از config |
 
-## Documentation
+**در پکیج نیست:** سفارش/فاکتور/پرداخت (`karnoweb/commerce`)، UI ادمین، سبد خرید session، انبار حرکتی (`karnoweb/laravel-inventory`).
 
-- `SHOP_PACKAGE.md` — architecture contract (source of truth)
-- `packages/karnoweb/crm/README.md` — reference pattern
+## مثال سریع
+
+```php
+use Karnoweb\Shop\Facades\Shop;
+
+$price = Shop::pricing()->resolve($product, auth()->user());
+$cards = Shop::products()->resolveForProducts($products);
+$tree  = Shop::filters()->getCategoryTree();
+```
+
+بیشتر: [docs/usage/README.md](docs/usage/README.md)
+
+## License
+
+MIT
