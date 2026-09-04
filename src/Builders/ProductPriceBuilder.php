@@ -6,26 +6,28 @@ namespace Karnoweb\Shop\Builders;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Karnoweb\Shop\Exceptions\InvalidPriceAmountException;
 use Karnoweb\Shop\Exceptions\InvalidPriceWindowException;
 use Karnoweb\Shop\Exceptions\ProductNotFoundException;
 use Karnoweb\Shop\Models\ProductPrice;
+use Karnoweb\Shop\Support\Money;
+use Karnoweb\Shop\Support\ShopContext;
 
 /**
  * Fluent writer for time-windowed {@see ProductPrice} records.
  *
- * This is a writer, not a resolver — use `Shop::pricing()` or `Shop::quote()`
- * to read prices back. Each `Shop::price()` call returns an isolated builder
- * instance.
+ * `amount()` accepts a single integer (uses {@see self::currency()}) or a
+ * map of currency => amount to create multiple rows.
+ *
+ * startsAt/endsAt are optional; when both are unset the row is non-expiring.
  *
  * @example
  * Shop::price()
  *     ->productId($product->id)
+ *     ->currency('IRR')
  *     ->tier('retail')
- *     ->userGroupId(null)
  *     ->amount(1_200_000)
- *     ->startsAt(now()->subDay())
- *     ->endsAt(now()->addMonth())
  *     ->save();
  */
 class ProductPriceBuilder
@@ -38,7 +40,14 @@ class ProductPriceBuilder
 
     private bool $segmentIdSpecified = false;
 
-    private int|float|null $amount = null;
+    private ?int $branchId = null;
+
+    private bool $branchIdSpecified = false;
+
+    private ?string $currency = null;
+
+    /** @var int|float|array<string, int|float>|null */
+    private int|float|array|null $amount = null;
 
     private ?Carbon $startsAt = null;
 
@@ -80,8 +89,32 @@ class ProductPriceBuilder
         return $this->segmentId($userGroupId);
     }
 
-    /** Set the price amount (smallest currency unit). Must be >= 0. */
-    public function amount(int|float $amount): self
+    /**
+     * Set the soft host branch key. Null = global price.
+     * When omitted, defaults to {@see ShopContext::branchId()} if a resolver is bound.
+     */
+    public function branchId(?int $branchId): self
+    {
+        $this->branchId = $branchId;
+        $this->branchIdSpecified = true;
+
+        return $this;
+    }
+
+    /** Set the currency code. Defaults to config('shop.money.default_currency'). */
+    public function currency(?string $currency): self
+    {
+        $this->currency = $currency;
+
+        return $this;
+    }
+
+    /**
+     * Set the price amount (smallest currency unit), or a map of currency => amount.
+     *
+     * @param  int|float|array<string, int|float>  $amount
+     */
+    public function amount(int|float|array $amount): self
     {
         $this->amount = $amount;
 
@@ -105,21 +138,55 @@ class ProductPriceBuilder
     }
 
     /**
-     * Validate invariants and persist the price row using the model
-     * configured at `shop.models.product_price`.
+     * Validate invariants and persist one or more price rows.
+     *
+     * @return Model|Collection<int, Model>
      *
      * @throws ProductNotFoundException When `productId` was not set, or does not exist.
-     * @throws InvalidPriceAmountException When `amount` is negative.
+     * @throws InvalidPriceAmountException When any amount is negative.
      * @throws InvalidPriceWindowException When `startsAt` is after `endsAt`.
      */
-    public function save(): Model
+    public function save(): Model|Collection
+    {
+        $amounts = $this->normalizeAmounts();
+
+        if (count($amounts) === 1) {
+            $currency = array_key_first($amounts);
+
+            return $this->createRow($currency, $amounts[$currency]);
+        }
+
+        $created = collect();
+
+        foreach ($amounts as $currency => $amount) {
+            $created->push($this->createRow($currency, $amount));
+        }
+
+        return $created;
+    }
+
+    /**
+     * @return array<string, int|float>
+     */
+    private function normalizeAmounts(): array
+    {
+        if (is_array($this->amount)) {
+            return $this->amount;
+        }
+
+        $currency = $this->currency ?? Money::defaultCurrency();
+
+        return [$currency => $this->amount ?? 0];
+    }
+
+    private function createRow(string $currency, int|float|null $amount): Model
     {
         if ($this->productId === null || ! $this->productExists($this->productId)) {
             throw new ProductNotFoundException($this->productId);
         }
 
-        if ($this->amount !== null && $this->amount < 0) {
-            throw new InvalidPriceAmountException($this->amount);
+        if ($amount !== null && $amount < 0) {
+            throw new InvalidPriceAmountException($amount);
         }
 
         if ($this->startsAt !== null && $this->endsAt !== null && $this->startsAt->greaterThan($this->endsAt)) {
@@ -132,7 +199,15 @@ class ProductPriceBuilder
         /** @var class-string<Model> $priceClass */
         $priceClass = config('shop.models.product_price');
 
-        $attributes = ['product_id' => $this->productId];
+        $attributes = [
+            'product_id' => $this->productId,
+            'currency' => $currency,
+            'branch_id' => $this->branchIdSpecified
+                ? $this->branchId
+                : app(ShopContext::class)->branchId(),
+            'starts_at' => $this->startsAt,
+            'ends_at' => $this->endsAt,
+        ];
 
         if ($this->tier !== null) {
             $attributes['tier'] = $this->tier;
@@ -142,12 +217,9 @@ class ProductPriceBuilder
             $attributes['segment_id'] = $this->segmentId;
         }
 
-        if ($this->amount !== null) {
-            $attributes['price'] = $this->amount;
+        if ($amount !== null) {
+            $attributes['price'] = $amount;
         }
-
-        $attributes['starts_at'] = $this->startsAt;
-        $attributes['ends_at'] = $this->endsAt;
 
         return $priceClass::query()->create($attributes);
     }

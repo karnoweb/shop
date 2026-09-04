@@ -91,11 +91,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Money
+    |--------------------------------------------------------------------------
+    */
+    'money' => [
+        'default_currency' => env('SHOP_DEFAULT_CURRENCY', env('SHOP_CURRENCY', 'IRR')),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Pricing defaults
     |--------------------------------------------------------------------------
     */
     'pricing' => [
-        'currency' => env('SHOP_CURRENCY', 'IRR'),
+        'currency' => env('SHOP_CURRENCY', env('SHOP_DEFAULT_CURRENCY', 'IRR')),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Catalog
+    |--------------------------------------------------------------------------
+    |
+    | branch_mode:
+    | - strict: forBranch(X) returns only branch_id = X
+    | - inherit_global: forBranch(X) returns branch_id in (null, X)
+    |
+    | branch_id = null means a global catalog row.
+    |
+    */
+    'catalog' => [
+        'branch_mode' => env('SHOP_CATALOG_BRANCH_MODE', 'inherit_global'),
     ],
 
     /*

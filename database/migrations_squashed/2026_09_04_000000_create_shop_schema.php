@@ -137,13 +137,19 @@ return new class extends Migration
             // no host category system is wired up yet.
             $table->unsignedBigInteger('category_id')->nullable()->index();
 
-            // Variant/configuration shape: simple|codding|digital|service.
+            // Soft host key — branch is owned by the host. Null = global catalog.
+            $table->unsignedBigInteger('branch_id')->nullable()->index();
+
+            // Variant/configuration shape: simple|codding.
             $table->string('type')->default('simple');
 
-            // Generic, inventory-agnostic business classification:
-            // physical|service|digital|bundle. Independent from `type` above
-            // and never used to gate stock/availability (see ProductKindEnum).
-            $table->string('kind')->default('physical')->index();
+            // Inventory/sell behavior: simple|ingredient|composed|virtual|bundle.
+            // Independent from `type` above (see ProductKindEnum).
+            $table->string('kind')->default('simple')->index();
+
+            // Coding-axis sync bookkeeping: ready|needs_sync.
+            $table->string('variants_status')->default('ready')->index();
+            $table->string('variants_hash')->nullable();
 
             $table->foreignId('brand_id')->nullable()->constrained(ShopTables::name('brands'), 'id', 'fk_pi_brand')->nullOnDelete();
             $table->unsignedInteger('warning_quantity')->nullable();
@@ -179,6 +185,9 @@ return new class extends Migration
             $table->boolean('is_main')->default(false)->index();
             $table->string('sku')->nullable()->index();
 
+            // Soft host key — branch is owned by the host. Null = global catalog.
+            $table->unsignedBigInteger('branch_id')->nullable()->index();
+
             // Smallest currency unit, integer amount — matches product_prices.price.
             $table->decimal('base_price', 15, 0)->unsigned()->default(0);
 
@@ -186,10 +195,7 @@ return new class extends Migration
             $table->unsignedBigInteger('stock')->default(0);
             $table->unsignedInteger('minimum_sale')->nullable();
             $table->unsignedInteger('maximum_sale')->nullable();
-            $table->decimal('weight')->nullable();
-            $table->decimal('height')->nullable();
-            $table->decimal('length')->nullable();
-            $table->decimal('width')->nullable();
+            $table->unsignedInteger('weight_grams')->nullable();
             $table->json('searchable_title')->nullable();
 
             // Optional default unit-of-measure code (e.g. "kg", "pcs"), purely
@@ -197,7 +203,14 @@ return new class extends Migration
             // integrates with `karnoweb/laravel-inventory` UOM tables here.
             $table->string('default_uom_code')->nullable();
 
+            // Host-initiated lock (e.g. after an external sale). Soft actor key.
+            $table->timestamp('locked_at')->nullable();
+            $table->string('locked_reason')->nullable();
+            $table->unsignedBigInteger('locked_by')->nullable()->index();
+
             // Structured, query-friendly extension point (see docs/usage.md).
+            // Variant suspension is stored as extra_attributes['suspended']=true
+            // so obsolete coding variants are never deleted.
             $table->json('extra_attributes')->nullable();
 
             $table->boolean('published')->default(false)->index();
@@ -224,15 +237,17 @@ return new class extends Migration
             $table->string('title');
             $table->text('description')->nullable();
             $table->unsignedBigInteger('external_discount_id')->nullable()->index();
-            $table->string('campaign_type')->default('price_adjustment')->comment('Campaign type: product_based, order_based (legacy), or price_adjustment');
+            $table->string('campaign_type')->default('price_adjustment')->comment('Catalog/pricing scoped: product_based or price_adjustment');
             $table->json('conditions')->nullable()->comment('Campaign filter conditions');
+            $table->json('payload')->nullable()->comment('Catalog extras (e.g. currency) — not order semantics');
             $table->string('condition_logic')->default('and')->comment('Logic for conditions: and/or');
             $table->integer('priority')->default(0)->comment('Higher priority campaigns are evaluated first');
             $table->boolean('is_active')->default(true);
-            $table->boolean('apply_automatically')->default(true)->comment('Auto-apply to matching orders');
-            $table->boolean('exclude_manual_orders')->default(false)->comment('Exclude from manual invoices');
+            $table->boolean('apply_automatically')->default(true)->comment('Auto-apply to matching catalog prices');
+            $table->boolean('exclude_manual_orders')->default(false);
             $table->dateTime('starts_at')->nullable();
             $table->dateTime('expires_at')->nullable();
+            $table->unsignedBigInteger('branch_id')->nullable()->index();
             $table->unsignedBigInteger('created_by')->nullable()->index();
             $table->text('languages')->nullable();
             $table->timestamps();
@@ -251,21 +266,24 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained(ShopTables::name('products'), 'id', 'fk_pp_product')->cascadeOnDelete();
 
             // Soft host key — generic segmentation (typically a user group),
-            // owned by the host. Renamed from `user_group_id` to the generic
-            // `segment_id`; `ProductPriceBuilder::userGroupId()` /
+            // owned by the host. `ProductPriceBuilder::userGroupId()` /
             // `QuoteBuilder::userGroupId()` remain as aliases.
             $table->unsignedBigInteger('segment_id')->nullable()->index();
 
+            // Soft host key — branch is owned by the host. Null = global price.
+            $table->unsignedBigInteger('branch_id')->nullable()->index();
+
             // Portable price tier (e.g. "retail", "wholesale"); independent from segment_id.
             $table->string('tier')->nullable();
+
+            $table->string('currency', 10)->nullable()->default('IRR');
 
             $table->decimal('price', 15, 0)->unsigned();
             $table->timestamp('starts_at')->nullable();
             $table->timestamp('ends_at')->nullable();
             $table->timestamps();
 
-            $table->index(['product_id', 'segment_id']);
-            $table->index(['product_id', 'tier']);
+            $table->index(['product_id', 'branch_id', 'segment_id', 'tier', 'currency'], 'idx_pp_resolve');
             $table->index(['starts_at', 'ends_at']);
         });
     }

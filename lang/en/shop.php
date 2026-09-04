@@ -16,13 +16,12 @@ return [
         'type' => [
             'simple' => 'Simple',
             'codding' => 'Variant',
-            'digital' => 'Digital',
-            'service' => 'Service',
         ],
         'kind' => [
-            'physical' => 'Physical',
-            'service' => 'Service',
-            'digital' => 'Digital',
+            'simple' => 'Simple',
+            'ingredient' => 'Ingredient',
+            'composed' => 'Composed',
+            'virtual' => 'Virtual',
             'bundle' => 'Bundle',
         ],
     ],
@@ -48,5 +47,6 @@ return [
         'invalid_price_window' => 'Price window is invalid: starts_at must be before or equal to ends_at.',
         'invalid_price_amount' => 'Price amount must be zero or greater.',
         'product_not_found' => 'Product [:id] was not found.',
+        'product_interface_not_found' => 'Product interface [:id] was not found.',
     ],
 ];

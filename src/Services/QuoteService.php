@@ -35,8 +35,16 @@ readonly class QuoteService
         ?int $userGroupId = null,
         ?string $tier = null,
         string $itemType = 'shop.product',
+        ?string $currency = null,
+        ?int $branchId = null,
     ): PriceQuote {
-        $detail = $this->priceResolver->resolveDetailedForUserGroupId($product, $userGroupId, $tier);
+        $detail = $this->priceResolver->resolveDetailedForUserGroupId(
+            $product,
+            $userGroupId,
+            $tier,
+            $currency,
+            $branchId,
+        );
 
         $basePrice = $detail['price'];
         $source = $detail['source'];

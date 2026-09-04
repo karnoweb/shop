@@ -6,18 +6,24 @@ namespace Karnoweb\Shop\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Karnoweb\Shop\Support\BranchScope;
+use Karnoweb\Shop\Support\Money;
 
 /**
  * Time-windowed product price, optionally scoped to a host segment
  * (typically a user group, but generic enough for any soft host
- * segmentation key — see `segment_id`).
+ * segmentation key — see `segment_id`) and currency.
  */
 class ProductPrice extends BaseModel
 {
+    use BranchScope;
+
     protected $fillable = [
         'product_id',
         'segment_id',
+        'branch_id',
         'tier',
+        'currency',
         'price',
         'starts_at',
         'ends_at',
@@ -30,6 +36,15 @@ class ProductPrice extends BaseModel
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $price): void {
+            if ($price->currency === null || $price->currency === '') {
+                $price->currency = Money::defaultCurrency();
+            }
+        });
     }
 
     public function product(): BelongsTo
@@ -80,6 +95,11 @@ class ProductPrice extends BaseModel
     public function scopeForTier(Builder $query, ?string $tier): Builder
     {
         return $query->where('tier', $tier);
+    }
+
+    public function scopeForCurrency(Builder $query, string $currency): Builder
+    {
+        return $query->where('currency', $currency);
     }
 
     public function scopeDefault(Builder $query): Builder

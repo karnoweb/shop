@@ -31,6 +31,12 @@ class QuoteBuilder
 
     private ?int $segmentId = null;
 
+    private ?string $currency = null;
+
+    private ?int $branchId = null;
+
+    private bool $branchIdSpecified = false;
+
     public function __construct(
         private readonly QuoteService $quoteService
     ) {}
@@ -91,6 +97,21 @@ class QuoteBuilder
         return $this->segmentId($userGroupId);
     }
 
+    public function currency(?string $currency): self
+    {
+        $this->currency = $currency;
+
+        return $this;
+    }
+
+    public function branchId(?int $branchId): self
+    {
+        $this->branchId = $branchId;
+        $this->branchIdSpecified = true;
+
+        return $this;
+    }
+
     /**
      * Resolve the quote for the configured product/tier/user-group.
      *
@@ -109,6 +130,13 @@ class QuoteBuilder
             throw new ProductNotFoundException($this->productId);
         }
 
-        return $this->quoteService->resolve($product, $this->segmentId, $this->tier, $this->itemType);
+        return $this->quoteService->resolve(
+            $product,
+            $this->segmentId,
+            $this->tier,
+            $this->itemType,
+            $this->currency,
+            $this->branchIdSpecified ? $this->branchId : null,
+        );
     }
 }

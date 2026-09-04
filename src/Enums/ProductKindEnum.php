@@ -7,29 +7,27 @@ namespace Karnoweb\Shop\Enums;
 use Karnoweb\Shop\Models\ProductInterface;
 
 /**
- * Generic, inventory-agnostic business classification for a
+ * Inventory/sell behavior classification for a
  * {@see ProductInterface}.
  *
- * This is deliberately decoupled from stock/inventory concerns — it is pure
- * catalog metadata for "what kind of thing is this to a business", not "how
- * is it stocked" (that stays with `karnoweb/laravel-inventory` on the host).
- * It is also independent from {@see ProductInterfaceTypeEnum}, which
- * describes the variant/configuration shape (simple/codding/...), not the
- * business kind.
+ * Independent from {@see ProductInterfaceTypeEnum}, which describes only the
+ * variant/configuration shape (simple vs coding axes).
  */
 enum ProductKindEnum: string
 {
-    case PHYSICAL = 'physical';
-    case SERVICE = 'service';
-    case DIGITAL = 'digital';
+    case SIMPLE = 'simple';
+    case INGREDIENT = 'ingredient';
+    case COMPOSED = 'composed';
+    case VIRTUAL = 'virtual';
     case BUNDLE = 'bundle';
 
     public function title(): string
     {
         return match ($this) {
-            self::PHYSICAL => __('shop::shop.product_interface.kind.physical'),
-            self::SERVICE => __('shop::shop.product_interface.kind.service'),
-            self::DIGITAL => __('shop::shop.product_interface.kind.digital'),
+            self::SIMPLE => __('shop::shop.product_interface.kind.simple'),
+            self::INGREDIENT => __('shop::shop.product_interface.kind.ingredient'),
+            self::COMPOSED => __('shop::shop.product_interface.kind.composed'),
+            self::VIRTUAL => __('shop::shop.product_interface.kind.virtual'),
             self::BUNDLE => __('shop::shop.product_interface.kind.bundle'),
         };
     }

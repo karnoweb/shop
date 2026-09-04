@@ -16,13 +16,12 @@ return [
         'type' => [
             'simple' => 'ساده',
             'codding' => 'تنوع‌دار',
-            'digital' => 'دیجیتال',
-            'service' => 'خدمت',
         ],
         'kind' => [
-            'physical' => 'فیزیکی',
-            'service' => 'خدمت',
-            'digital' => 'دیجیتال',
+            'simple' => 'ساده',
+            'ingredient' => 'ماده اولیه',
+            'composed' => 'ترکیبی',
+            'virtual' => 'مجازی',
             'bundle' => 'باندل',
         ],
     ],
@@ -48,5 +47,6 @@ return [
         'invalid_price_window' => 'بازهٔ قیمت نامعتبر است: starts_at باید قبل یا برابر ends_at باشد.',
         'invalid_price_amount' => 'مقدار قیمت باید صفر یا بیشتر باشد.',
         'product_not_found' => 'محصول [:id] یافت نشد.',
+        'product_interface_not_found' => 'واسط محصول [:id] یافت نشد.',
     ],
 ];

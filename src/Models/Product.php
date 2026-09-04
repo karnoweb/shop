@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Karnoweb\Shop\Support\BranchScope;
 use Karnoweb\Shop\Support\ShopTables;
 
 /**
@@ -17,24 +18,26 @@ use Karnoweb\Shop\Support\ShopTables;
  */
 class Product extends BaseModel
 {
+    use BranchScope;
     use SoftDeletes;
 
     protected $fillable = [
         'is_main',
         'published',
         'sku',
+        'branch_id',
         'base_price',
         'stock',
         'minimum_sale',
         'maximum_sale',
-        'weight',
-        'height',
-        'length',
-        'width',
+        'weight_grams',
         'searchable_title',
         'extra_attributes',
         'default_uom_code',
         'product_interface_id',
+        'locked_at',
+        'locked_reason',
+        'locked_by',
     ];
 
     protected function casts(): array
@@ -43,15 +46,13 @@ class Product extends BaseModel
             'is_main' => 'boolean',
             'published' => 'boolean',
             'searchable_title' => 'json',
-            'weight' => 'decimal:2',
-            'height' => 'decimal:2',
-            'length' => 'decimal:2',
-            'width' => 'decimal:2',
+            'weight_grams' => 'integer',
             'minimum_sale' => 'integer',
             'maximum_sale' => 'integer',
             'stock' => 'integer',
             'base_price' => 'decimal:0',
             'extra_attributes' => 'array',
+            'locked_at' => 'datetime',
         ];
     }
 
@@ -107,6 +108,15 @@ class Product extends BaseModel
         return $query->where('is_main', true);
     }
 
+    public function scopeNotSuspended(Builder $query): Builder
+    {
+        return $query->where(function (Builder $inner): void {
+            $inner->whereNull('extra_attributes')
+                ->orWhereJsonDoesntContain('extra_attributes->suspended', true)
+                ->orWhere('extra_attributes->suspended', false);
+        });
+    }
+
     public function activePrice(): HasOne
     {
         return $this->hasOne(config('shop.models.product_price', ProductPrice::class))
@@ -138,6 +148,16 @@ class Product extends BaseModel
                     $query->active()->whereNotNull('segment_id');
                 }
             );
+    }
+
+    public function isLocked(): bool
+    {
+        return $this->locked_at !== null;
+    }
+
+    public function isSuspended(): bool
+    {
+        return (bool) data_get($this->extra_attributes, 'suspended', false);
     }
 
     /**

@@ -5,22 +5,28 @@ declare(strict_types=1);
 namespace Karnoweb\Shop\Builders;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Karnoweb\Shop\Contracts\SkuGeneratorContract;
 use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
 use Karnoweb\Shop\Enums\ProductKindEnum;
+use Karnoweb\Shop\Enums\VariantsStatusEnum;
+use Karnoweb\Shop\Events\ProductSaved;
+use Karnoweb\Shop\Models\Product;
 use Karnoweb\Shop\Models\ProductInterface;
+use Karnoweb\Shop\Support\ShopContext;
+use Karnoweb\Shop\Support\ShopEventDispatcher;
 
 /**
  * Fluent builder for creating catalog {@see ProductInterface} records.
  *
- * Each `Shop::productInterface()` call returns an isolated builder instance.
- * `category_id` is a soft host key (see SHOP_PACKAGE.md §0) — it is stored as
- * a plain integer, never FK-constrained by this package.
+ * {@see self::create()} always persists the interface **and** exactly one
+ * `is_main` {@see Product} in a single transaction.
  *
  * @example
  * Shop::productInterface()
  *     ->slug('coffee-beans-1kg')
  *     ->type('simple')
- *     ->kind('physical')
+ *     ->kind('simple')
  *     ->brandId($brand->id)
  *     ->categoryId(10)
  *     ->published(true)
@@ -31,6 +37,11 @@ class ProductInterfaceBuilder
     /** @var array<string, mixed> */
     private array $attributes = [];
 
+    /** @var array<string, mixed> */
+    private array $mainProductAttributes = [];
+
+    private bool $branchIdSpecified = false;
+
     /** Set the product interface slug. */
     public function slug(string $slug): self
     {
@@ -39,7 +50,7 @@ class ProductInterfaceBuilder
         return $this;
     }
 
-    /** Set the catalog type (e.g. 'simple', 'codding', 'digital', 'service') — variant/configuration shape. */
+    /** Set the variant structure: 'simple' or 'codding'. */
     public function type(string|ProductInterfaceTypeEnum $type): self
     {
         $this->attributes['type'] = $type instanceof ProductInterfaceTypeEnum ? $type->value : $type;
@@ -48,11 +59,8 @@ class ProductInterfaceBuilder
     }
 
     /**
-     * Set the generic, inventory-agnostic business classification:
-     * 'physical'|'service'|'digital'|'bundle' (see {@see ProductKindEnum}).
-     *
-     * Independent from {@see self::type()} — `kind` is "what kind of thing is
-     * this to the business", not the variant/configuration shape.
+     * Set inventory/sell behavior:
+     * 'simple'|'ingredient'|'composed'|'virtual'|'bundle' (see {@see ProductKindEnum}).
      */
     public function kind(string|ProductKindEnum $kind): self
     {
@@ -70,14 +78,26 @@ class ProductInterfaceBuilder
     }
 
     /** Set the soft host category key — never FK-constrained by this package. */
-    public function categoryId(int|string $categoryId): self
+    public function categoryId(int|string|null $categoryId): self
     {
         $this->attributes['category_id'] = $categoryId;
 
         return $this;
     }
 
-    /** Set the published flag. */
+    /**
+     * Set the soft host branch key. Null = global catalog.
+     * When omitted, defaults to {@see ShopContext::branchId()} if a resolver is bound.
+     */
+    public function branchId(?int $branchId): self
+    {
+        $this->attributes['branch_id'] = $branchId;
+        $this->branchIdSpecified = true;
+
+        return $this;
+    }
+
+    /** Set the published flag on the product interface. */
     public function published(bool $published = true): self
     {
         $this->attributes['published'] = $published;
@@ -93,6 +113,49 @@ class ProductInterfaceBuilder
         return $this;
     }
 
+    /** Optional SKU for the auto-created main product. Generated when omitted. */
+    public function sku(string $sku): self
+    {
+        $this->mainProductAttributes['sku'] = $sku;
+
+        return $this;
+    }
+
+    /** Optional default UOM code inherited by the main product. */
+    public function defaultUomCode(?string $uomCode): self
+    {
+        $this->mainProductAttributes['default_uom_code'] = $uomCode;
+
+        return $this;
+    }
+
+    /** Optional weight in grams for the main product. */
+    public function weightGrams(?int $grams): self
+    {
+        $this->mainProductAttributes['weight_grams'] = $grams;
+
+        return $this;
+    }
+
+    /** Optional base price for the main product. */
+    public function basePrice(int $basePrice): self
+    {
+        $this->mainProductAttributes['base_price'] = $basePrice;
+
+        return $this;
+    }
+
+    /**
+     * Published flag for the auto-created main product.
+     * Defaults to false unless this is called.
+     */
+    public function productPublished(bool $published = true): self
+    {
+        $this->mainProductAttributes['published'] = $published;
+
+        return $this;
+    }
+
     /** Set a single raw attribute understood by the configured ProductInterface model (escape hatch). */
     public function attribute(string $key, mixed $value): self
     {
@@ -102,12 +165,7 @@ class ProductInterfaceBuilder
     }
 
     /**
-     * Merge into the structured `extra_attributes` JSON column — the
-     * documented, query-friendly extension point for business-specific data
-     * that doesn't warrant a dedicated column (see docs/usage.md).
-     *
-     * Repeated calls merge (shallow) into the same array rather than
-     * replacing it, so callers can build it up incrementally.
+     * Merge into the structured `extra_attributes` JSON column.
      *
      * @param  array<string, mixed>  $attributes
      */
@@ -133,12 +191,62 @@ class ProductInterfaceBuilder
         return $this;
     }
 
-    /** Persist the product interface using the model configured at `shop.models.product_interface`. */
+    /**
+     * Persist the product interface and its main product in one transaction.
+     * Dispatches {@see ProductSaved} after commit and returns the interface
+     * with `mainProduct` loaded.
+     */
     public function create(): Model
     {
-        /** @var class-string<Model> $class */
-        $class = config('shop.models.product_interface');
+        return DB::transaction(function (): Model {
+            $branchId = $this->resolveBranchId();
 
-        return $class::query()->create($this->attributes);
+            $attributes = $this->attributes;
+            $attributes['branch_id'] = $branchId;
+            $attributes['type'] ??= ProductInterfaceTypeEnum::SIMPLE->value;
+            $attributes['kind'] ??= ProductKindEnum::SIMPLE->value;
+            $attributes['variants_status'] ??= VariantsStatusEnum::READY->value;
+
+            /** @var class-string<Model> $interfaceClass */
+            $interfaceClass = config('shop.models.product_interface');
+
+            /** @var Model $interface */
+            $interface = $interfaceClass::query()->create($attributes);
+
+            /** @var class-string<Model> $productClass */
+            $productClass = config('shop.models.product');
+
+            $sku = $this->mainProductAttributes['sku']
+                ?? app(SkuGeneratorContract::class)->generate((string) $interface->getAttribute('slug'), []);
+
+            $product = $productClass::query()->create([
+                'product_interface_id' => $interface->getKey(),
+                'is_main' => true,
+                'sku' => $sku,
+                'branch_id' => $branchId,
+                'default_uom_code' => $this->mainProductAttributes['default_uom_code'] ?? null,
+                'weight_grams' => $this->mainProductAttributes['weight_grams'] ?? null,
+                'base_price' => $this->mainProductAttributes['base_price'] ?? 0,
+                'published' => $this->mainProductAttributes['published'] ?? false,
+            ]);
+
+            ShopEventDispatcher::dispatch(new ProductSaved(
+                productId: $product->getKey(),
+                productInterfaceId: $interface->getKey(),
+            ));
+
+            $interface->load('mainProduct');
+
+            return $interface;
+        });
+    }
+
+    private function resolveBranchId(): ?int
+    {
+        if ($this->branchIdSpecified) {
+            return isset($this->attributes['branch_id']) ? (int) $this->attributes['branch_id'] : null;
+        }
+
+        return app(ShopContext::class)->branchId();
     }
 }

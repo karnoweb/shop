@@ -6,12 +6,17 @@ namespace Karnoweb\Shop;
 
 use Illuminate\Support\ServiceProvider;
 use Karnoweb\Shop\Builders\QuoteBuilder;
+use Karnoweb\Shop\Contracts\BranchContextResolverContract;
 use Karnoweb\Shop\Contracts\CampaignPriceAdjuster;
+use Karnoweb\Shop\Contracts\SkuGeneratorContract;
 use Karnoweb\Shop\Contracts\StorefrontContext;
 use Karnoweb\Shop\Services\ProductFilterService;
 use Karnoweb\Shop\Services\ProductPriceResolver;
 use Karnoweb\Shop\Services\ProductService;
 use Karnoweb\Shop\Services\QuoteService;
+use Karnoweb\Shop\Services\VariantsService;
+use Karnoweb\Shop\Support\DefaultSkuGenerator;
+use Karnoweb\Shop\Support\ShopContext;
 use Karnoweb\Shop\Support\ShopMorphMap;
 
 class ShopServiceProvider extends ServiceProvider
@@ -20,11 +25,25 @@ class ShopServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/shop.php', 'shop');
 
+        $this->app->singleton(SkuGeneratorContract::class, DefaultSkuGenerator::class);
+
+        $this->app->singleton(ShopContext::class, function ($app) {
+            return new ShopContext(
+                $app->bound(BranchContextResolverContract::class)
+                    ? $app->make(BranchContextResolverContract::class)
+                    : null,
+            );
+        });
+
+        $this->app->singleton(VariantsService::class);
+
         $this->app->singleton('shop', fn ($app) => new Shop(
             $app->make(ProductService::class),
             $app->make(ProductFilterService::class),
             $app->make(ProductPriceResolver::class),
             $app->make(QuoteService::class),
+            $app->make(VariantsService::class),
+            $app->make(ShopContext::class),
         ));
         $this->app->singleton(Shop::class, fn ($app) => $app->make('shop'));
 

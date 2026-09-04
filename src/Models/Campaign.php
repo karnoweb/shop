@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Karnoweb\Shop\Enums\CampaignConditionTypeEnum;
 use Karnoweb\Shop\Enums\CampaignTypeEnum;
+use Karnoweb\Shop\Support\BranchScope;
 
 /**
  * Shop marketing campaign (not CRM Campaign).
@@ -20,6 +21,7 @@ use Karnoweb\Shop\Enums\CampaignTypeEnum;
  */
 class Campaign extends BaseModel
 {
+    use BranchScope;
     use SoftDeletes;
 
     protected $fillable = [
@@ -28,6 +30,7 @@ class Campaign extends BaseModel
         'external_discount_id',
         'campaign_type',
         'conditions',
+        'payload',
         'condition_logic',
         'priority',
         'is_active',
@@ -35,6 +38,7 @@ class Campaign extends BaseModel
         'exclude_manual_orders',
         'starts_at',
         'expires_at',
+        'branch_id',
         'created_by',
         'languages',
     ];
@@ -43,6 +47,7 @@ class Campaign extends BaseModel
     {
         return [
             'conditions' => 'array',
+            'payload' => 'array',
             'campaign_type' => CampaignTypeEnum::class,
             'is_active' => 'boolean',
             'apply_automatically' => 'boolean',

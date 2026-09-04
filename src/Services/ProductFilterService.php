@@ -431,7 +431,7 @@ class ProductFilterService
     public function weightOptions(?int $categoryId, array $brandIds, array $attributeValueIds): Collection
     {
         $productClass = $this->productModel();
-        $query = $productClass::query()->active()->whereNotNull('weight');
+        $query = $productClass::query()->active()->whereNotNull('weight_grams');
 
         if ($categoryId) {
             $ids = $this->descendantIds($categoryId);
@@ -447,7 +447,7 @@ class ProductFilterService
         }
 
         return $query->distinct()
-            ->pluck('weight')
+            ->pluck('weight_grams')
             ->map(fn ($w) => $w !== null ? number_format((float) $w, 2, '.', '') : null)
             ->filter()
             ->unique()

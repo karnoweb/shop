@@ -6,15 +6,19 @@ namespace Karnoweb\Shop;
 
 use Illuminate\Support\Traits\Macroable;
 use Karnoweb\Shop\Builders\BrandBuilder;
+use Karnoweb\Shop\Builders\BulkProductPriceBuilder;
 use Karnoweb\Shop\Builders\ProductBuilder;
 use Karnoweb\Shop\Builders\ProductInterfaceBuilder;
 use Karnoweb\Shop\Builders\ProductPriceBuilder;
 use Karnoweb\Shop\Builders\QuoteBuilder;
+use Karnoweb\Shop\Builders\VariantsBuilder;
 use Karnoweb\Shop\Services\ProductFilterService;
 use Karnoweb\Shop\Services\ProductPriceResolver;
 use Karnoweb\Shop\Services\ProductService;
 use Karnoweb\Shop\Services\QuoteService;
+use Karnoweb\Shop\Services\VariantsService;
 use Karnoweb\Shop\Support\ResolvesConfiguredModels;
+use Karnoweb\Shop\Support\ShopContext;
 
 /**
  * Thin manager: service delegation, config access, builder entry points, and
@@ -30,6 +34,8 @@ class Shop
         private readonly ProductFilterService $filters,
         private readonly ProductPriceResolver $pricing,
         private readonly QuoteService $quoteService,
+        private readonly VariantsService $variantsService,
+        private readonly ShopContext $context,
     ) {}
 
     public function config(string $key, mixed $default = null): mixed
@@ -50,6 +56,11 @@ class Shop
     public function pricing(): ProductPriceResolver
     {
         return $this->pricing;
+    }
+
+    public function context(): ShopContext
+    {
+        return $this->context;
     }
 
     /** Start building a new Brand (fluent API). Fresh builder each call. */
@@ -74,6 +85,18 @@ class Shop
     public function price(): ProductPriceBuilder
     {
         return new ProductPriceBuilder;
+    }
+
+    /** Start writing prices for many products at once. Fresh builder each call. */
+    public function prices(): BulkProductPriceBuilder
+    {
+        return new BulkProductPriceBuilder;
+    }
+
+    /** Start a coding-axis preview/sync. Fresh builder each call. */
+    public function variants(): VariantsBuilder
+    {
+        return new VariantsBuilder($this->variantsService);
     }
 
     /** Start resolving a portable PriceQuote DTO (fluent API). Fresh builder each call. */

@@ -56,36 +56,35 @@ final class BuilderApiTest extends TestCase
         $productInterface = ShopFacade::productInterface()
             ->slug('coffee-beans-1kg')
             ->type('simple')
-            ->kind('physical')
+            ->kind('simple')
             ->brandId($brand->id)
             ->categoryId(10)
             ->published(true)
+            ->sku('COF-1KG')
+            ->basePrice(1_200_000)
+            ->weightGrams(1000)
+            ->productPublished(true)
             ->extra(['origin' => 'brazil', 'roast' => 'medium'])
             ->create();
 
         $this->assertSame('coffee-beans-1kg', $productInterface->slug);
         $this->assertSame($brand->id, $productInterface->brand_id);
         $this->assertSame(10, $productInterface->category_id);
-        $this->assertSame('physical', $productInterface->kind->value);
+        $this->assertSame('simple', $productInterface->kind->value);
         $this->assertSame(
             ['origin' => 'brazil', 'roast' => 'medium'],
             $productInterface->extra_attributes
         );
 
-        $product = ShopFacade::product()
-            ->productInterfaceId($productInterface->id)
-            ->sku('COF-1KG')
-            ->basePrice(1_200_000)
-            ->published(true)
-            ->isMain(true)
-            ->extra(['weight_grams' => 1000])
-            ->create();
-
+        $product = $productInterface->mainProduct;
+        $this->assertNotNull($product);
         $this->assertSame('COF-1KG', $product->sku);
         $this->assertSame(1200000, (int) $product->base_price);
         $this->assertTrue($product->is_main);
+        $this->assertTrue($product->published);
+        $this->assertSame(1000, $product->weight_grams);
         $this->assertSame($productInterface->id, $product->product_interface_id);
-        $this->assertSame(['weight_grams' => 1000], $product->extra_attributes);
+        $this->assertSame(1, $productInterface->products()->count());
     }
 
     public function test_product_interface_builder_extra_merges_across_calls(): void
@@ -93,14 +92,17 @@ final class BuilderApiTest extends TestCase
         $productInterface = ShopFacade::productInterface()
             ->slug('multi-extra-'.uniqid())
             ->type('simple')
-            ->kind('digital')
+            ->kind('virtual')
             ->categoryId(10)
             ->extra(['a' => 1])
             ->extra(['b' => 2])
             ->create();
 
         $this->assertSame(['a' => 1, 'b' => 2], $productInterface->extra_attributes);
-        $this->assertSame('digital', $productInterface->kind->value);
+        $this->assertSame('virtual', $productInterface->kind->value);
+        $this->assertNotNull($productInterface->mainProduct);
+        $this->assertTrue($productInterface->mainProduct->is_main);
+        $this->assertFalse($productInterface->mainProduct->published);
     }
 
     public function test_quote_resolves_user_group_price_over_default_price(): void
@@ -167,19 +169,16 @@ final class BuilderApiTest extends TestCase
         $productInterface = ShopFacade::productInterface()
             ->slug('sack-of-rice-'.uniqid())
             ->type('simple')
-            ->kind('physical')
+            ->kind('simple')
             ->categoryId(10)
             ->published(true)
-            ->create();
-
-        $product = ShopFacade::product()
-            ->productInterfaceId($productInterface->id)
             ->sku('RICE-'.uniqid())
             ->basePrice(500_000)
             ->defaultUomCode('kg')
-            ->published(true)
-            ->isMain(true)
+            ->productPublished(true)
             ->create();
+
+        $product = $productInterface->mainProduct;
 
         $this->assertSame('kg', $product->default_uom_code);
 
@@ -347,18 +346,15 @@ final class BuilderApiTest extends TestCase
         $productInterface = ShopFacade::productInterface()
             ->slug('coffee-beans-'.uniqid())
             ->type('simple')
-            ->kind('physical')
+            ->kind('simple')
             ->brandId($brand->id)
             ->categoryId(10)
             ->published(true)
-            ->create();
-
-        return ShopFacade::product()
-            ->productInterfaceId($productInterface->id)
             ->sku('COF-'.uniqid())
             ->basePrice(1_200_000)
-            ->published(true)
-            ->isMain(true)
+            ->productPublished(true)
             ->create();
+
+        return $productInterface->mainProduct;
     }
 }

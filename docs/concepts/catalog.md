@@ -3,7 +3,7 @@
 ```text
 Brand / Category (میزبان)
     └── ProductInterface   ← ورودی کاتالوگ (عنوان، اسلاگ، نوع)
-            └── Product    ← SKU قابل فروش (قیمت پایه، ابعاد، …)
+            └── Product    ← SKU قابل فروش (قیمت پایه، وزن، …)
                     └── ProductPrice  ← قیمت پنجره‌ای (گروه کاربری / tier)
 ```
 
@@ -21,7 +21,11 @@ Brand / Category (میزبان)
 
 ## انواع ProductInterface
 
-`simple`، `codding`، `digital`، `service` — از `ProductInterfaceTypeEnum`.
+ساختار واریانت (`type`): `simple`، `codding` — از `ProductInterfaceTypeEnum`.
+
+رفتار فروش/موجودی (`kind`): `simple`، `ingredient`، `composed`، `virtual`، `bundle` — از `ProductKindEnum`.
+
+ایجاد `ProductInterface` همیشه یک `Product` با `is_main=true` می‌سازد. برای `codding` از `Shop::variants()->preview()` / `sync('safe')` استفاده کنید. `branch_id` اختیاری است (`null` = کاتالوگ سراسری).
 
 ## ویژگی‌ها
 

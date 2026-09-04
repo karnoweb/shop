@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Karnoweb\Shop\Contracts\CampaignPriceAdjuster;
 use Karnoweb\Shop\Contracts\StorefrontContext;
+use Karnoweb\Shop\Exceptions\ProductNotFoundException;
 
 readonly class ProductService
 {
@@ -92,5 +93,28 @@ readonly class ProductService
     public function isInCart(?Model $product): bool
     {
         return $this->storefrontContext?->isInCart($product) ?? false;
+    }
+
+    /**
+     * Host-initiated lock. A locked product is never auto-changed or suspended by variant sync.
+     */
+    public function lock(int|string $productId, ?string $reason = null, int|string|null $lockedBy = null): Model
+    {
+        /** @var class-string<Model> $class */
+        $class = config('shop.models.product');
+
+        $product = $class::query()->find($productId);
+
+        if ($product === null) {
+            throw new ProductNotFoundException($productId);
+        }
+
+        $product->forceFill([
+            'locked_at' => now(),
+            'locked_reason' => $reason,
+            'locked_by' => $lockedBy,
+        ])->save();
+
+        return $product->refresh();
     }
 }

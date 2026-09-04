@@ -19,8 +19,11 @@ sync with the Facade's `@method` annotations.
 - [Installation](#installation)
 - [Table prefix & configurable table names](#table-prefix--configurable-table-names)
 - [0 → 100: building a catalog](#0--100-building-a-catalog)
-- [Product kinds (generic business classification)](#product-kinds-generic-business-classification)
+- [Product kinds (inventory / sell behavior)](#product-kinds-inventory--sell-behavior)
 - [Variant modeling: ProductInterface vs Product](#variant-modeling-productinterface-vs-product)
+- [CODDING axes: preview and safe sync](#codding-axes-preview-and-safe-sync)
+- [Locking products](#locking-products)
+- [Branch scoping](#branch-scoping)
 - [Extra attributes (structured JSON extension point)](#extra-attributes-structured-json-extension-point)
 - [Price records (ProductPrice)](#price-records-productprice)
 - [Quote: pure DTO handoff to commerce](#quote-pure-dto-handoff-to-commerce)
@@ -50,6 +53,9 @@ use Karnoweb\Shop\Facades\Shop;
 | ProductInterface builder | `Shop::productInterface()` | `Builders\ProductInterfaceBuilder` |
 | Product builder | `Shop::product()` | `Builders\ProductBuilder` |
 | Price writer | `Shop::price()` | `Builders\ProductPriceBuilder` |
+| Bulk prices | `Shop::prices()` | `Builders\BulkProductPriceBuilder` |
+| Variants | `Shop::variants()` | `Builders\VariantsBuilder` |
+| Catalog context | `Shop::context()` | `Support\ShopContext` |
 | Quote reader | `Shop::quote()` | `Builders\QuoteBuilder` |
 | Quote service | `Shop::quotes()` | `Services\QuoteService` |
 | Pricing (existing) | `Shop::pricing()` | `Services\ProductPriceResolver` |
@@ -57,9 +63,9 @@ use Karnoweb\Shop\Facades\Shop;
 | Filters (existing) | `Shop::filters()` | `Services\ProductFilterService` |
 
 Every builder call (`brand()`, `productInterface()`, `product()`, `price()`,
-`quote()`) returns a **fresh, isolated instance** — nothing is shared or
-reset between calls, so builders are safe to reuse in loops without leaking
-state.
+`prices()`, `variants()`, `quote()`) returns a **fresh, isolated instance** —
+nothing is shared or reset between calls, so builders are safe to reuse in
+loops without leaking state.
 
 ## Installation
 
@@ -137,21 +143,19 @@ $brand = Shop::brand()
 
 $pi = Shop::productInterface()
     ->slug('coffee-beans-1kg')
-    ->type('simple')
-    ->kind('physical')        // physical|service|digital|bundle
+    ->type('simple')          // simple|codding — variant structure only
+    ->kind('simple')          // simple|ingredient|composed|virtual|bundle
     ->brandId($brand->id)
-    ->categoryId(10)          // soft host key
+    ->categoryId(10)          // soft host key, nullable
+    ->branchId(null)          // null = global catalog
+    ->sku('COF-1KG')          // optional; auto-generated from the slug when omitted
+    ->basePrice(1_200_000)
+    ->defaultUomCode('kg')
+    ->productPublished(true)  // main Product is unpublished unless set
     ->published(true)
     ->create();
 
-$product = Shop::product()
-    ->productInterfaceId($pi->id)
-    ->sku('COF-1KG')
-    ->isMain(true)
-    ->basePrice(1_200_000)
-    ->defaultUomCode('kg')    // optional, purely informational (see below)
-    ->published(true)
-    ->create();
+$product = $pi->mainProduct;  // always created in the same transaction
 
 Shop::price()
     ->productId($product->id)
@@ -186,8 +190,8 @@ $snapshot = $quote->toCommerceSnapshot();
 | Builder | Required inputs | Returns |
 |---|---|---|
 | `Shop::brand()` | `slug()` (unique) | Model configured at `shop.models.brand` |
-| `Shop::productInterface()` | `slug()` (unique), `categoryId()` | Model configured at `shop.models.product_interface` |
-| `Shop::product()` | `productInterfaceId()` | Model configured at `shop.models.product` |
+| `Shop::productInterface()` | `slug()` (unique) | Model configured at `shop.models.product_interface`, with `mainProduct` loaded |
+| `Shop::product()` | `productInterfaceId()` | Model configured at `shop.models.product` (extra SKUs; the main SKU is created by the interface builder) |
 
 All three also accept `attribute($key, $value)` (single raw attribute),
 `extra(array $attributes)` (structured JSON extension point — see below),
@@ -198,32 +202,29 @@ columns without waiting on a new builder method.
 stored without `->constrained()`/`->foreign()`. The host owns the `categories`
 table (or equivalent); this package never creates or reads it directly.
 
-## Product kinds (generic business classification)
+## Product kinds (inventory / sell behavior)
 
-`ProductInterface.kind` is a **generic, inventory-agnostic** business
-classification — "what kind of thing is this to the business" — independent
-from `type` (the variant/configuration shape: `simple`/`codding`/`digital`/`service`)
-and independent from stock/inventory (`karnoweb/laravel-inventory` on the host):
+`ProductInterface.kind` is inventory/sell behavior. It is independent from
+`type`, which is **only** the variant structure (`simple` or `codding`):
 
 | Kind | Meaning |
 |---|---|
-| `physical` (default) | A stockable, shippable good |
-| `service` | A non-stock service (labor, consulting, subscription seat, ...) |
-| `digital` | A non-stock digital good (license key, download, ...) |
-| `bundle` | A composite/kit of other products (composition is host/commerce concern) |
+| `simple` (default) | A regular sellable item |
+| `ingredient` | Used as an input of a composed item |
+| `composed` | Built from ingredients / other catalog items |
+| `virtual` | Non-physical (license, booking slot, download, ...) |
+| `bundle` | A kit of other products (composition stays in the host) |
 
 ```php
 use Karnoweb\Shop\Enums\ProductKindEnum;
+use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
 
-Shop::productInterface()->slug('consulting-hour')->kind('service')->categoryId(20)->create();
-Shop::productInterface()->slug('ebook-license')->kind(ProductKindEnum::DIGITAL)->categoryId(21)->create();
+Shop::productInterface()->slug('consulting-hour')->kind(ProductKindEnum::VIRTUAL)->create();
+Shop::productInterface()->slug('t-shirt')->type(ProductInterfaceTypeEnum::CODDING)->kind('simple')->create();
 ```
 
-`kind` accepts a plain string or a `ProductKindEnum` case and is cast to
-`ProductKindEnum` on the model (`$productInterface->kind->value`,
-`$productInterface->kind->title()` for a translated label). This package
-never uses `kind` to gate stock/availability logic — that stays entirely
-with the host's inventory integration.
+`kind` and `type` accept a plain string or the matching enum. The database
+stores the string value. Builders accept both.
 
 ## Variant modeling: ProductInterface vs Product
 
@@ -234,16 +235,104 @@ with the host's inventory integration.
   variant-specific attribute values. One or more rows per `ProductInterface`
   (`ProductInterface::hasMany(Product::class)` / `Product::belongsTo(ProductInterface::class)`).
 
-```php
-$pi = Shop::productInterface()->slug('t-shirt')->type('codding')->kind('physical')->categoryId(5)->create();
+Creating a `ProductInterface` **always** creates exactly one `Product` with
+`is_main=true` in the same DB transaction — for every type, including
+`codding`. The main product inherits `branch_id` and `default_uom_code`,
+gets an auto-generated SKU when you omit `sku()`, and is unpublished
+unless you call `productPublished(true)`. After commit, `ProductSaved` is
+dispatched via `ShopEventDispatcher`. The returned interface has
+`mainProduct` loaded.
 
-$small = Shop::product()->productInterfaceId($pi->id)->sku('TSHIRT-S')->basePrice(400_000)->isMain(true)->create();
-$large = Shop::product()->productInterfaceId($pi->id)->sku('TSHIRT-L')->basePrice(420_000)->create();
+```php
+$pi = Shop::productInterface()->slug('t-shirt')->type('codding')->kind('simple')->categoryId(5)->create();
+$pi->mainProduct; // always present
+
+// Extra SKUs can still be created by hand when you are not using axis sync:
+Shop::product()->productInterfaceId($pi->id)->sku('TSHIRT-L')->basePrice(420_000)->create();
 ```
+
+On the edit page the host typically: load category-based attributes → let
+the operator pick coding axes → `preview()` → `sync('safe')`.
 
 Pricing, price windows, and quotes are always resolved **per `Product`**
 (per SKU/variant), never per `ProductInterface` — see
 [Price records](#price-records-productprice) below.
+
+## CODDING axes: preview and safe sync
+
+`Shop::variants()` computes the cartesian product of `coding=true` axes.
+`preview()` never writes. `sync('safe')` creates missing variant products
+and never deletes anything.
+
+```php
+$axes = [
+    $colorAttributeId => ['coding' => true, 'values' => [$redId, $blueId]],
+    $sizeAttributeId => ['coding' => true, 'values' => [$sId, $mId]],
+    $materialAttributeId => ['coding' => false, 'values' => [$cottonId]],
+];
+
+$preview = Shop::variants()
+    ->forProductInterface($pi->id)
+    ->codingAxes($axes)
+    ->preview();
+// 2×2 = 4 signatures, each with sorted value ids + a stable suggested SKU
+
+$result = Shop::variants()
+    ->forProductInterface($pi->id)
+    ->codingAxes($axes)
+    ->sync('safe');
+```
+
+Rules:
+
+- Only `coding=true` axes enter the cartesian product.
+- SKU is stable for a given signature: `{pi-slug}-{valueId}-{valueId}`
+  (sorted). Bind `SkuGeneratorContract` to override.
+- `sync('safe')` creates missing variants, never deletes, and marks
+  obsolete unlocked variants as `extra_attributes['suspended']=true`.
+- A product with `locked_at` set is never auto-changed or suspended.
+- When the axes hash changes, `product_interfaces.variants_status`
+  becomes `needs_sync`. After a successful sync it is `ready` and
+  `variants_hash` is stored.
+- SIMPLE interfaces store at most one value per attribute on
+  `product_interface_attribute_values`. Coding-axis values live on the
+  variant `product_attribute_values` rows.
+
+## Locking products
+
+Locking is initiated by the **host** (for example after a sale is
+confirmed in another package). This package never watches orders.
+
+```php
+Shop::products()->lock($productId, reason: 'sold', lockedBy: $actorId);
+```
+
+Locked products keep their SKU and stay in the catalog. Variant sync
+skips them.
+
+## Branch scoping
+
+`branch_id` is a nullable soft host key on `product_interfaces`,
+`products`, `product_prices`, and `campaigns`. `null` means **global**.
+
+```env
+SHOP_CATALOG_BRANCH_MODE=inherit_global
+```
+
+| Mode | `forBranch(X)` |
+|---|---|
+| `strict` | only `branch_id = X` |
+| `inherit_global` (default) | `branch_id` in `(null, X)` |
+
+```php
+ProductInterface::query()->forBranch(3)->get();
+Product::query()->forBranch(3)->get();
+ProductPrice::query()->forBranch(3)->get();
+```
+
+If the host binds `BranchContextResolverContract`, builders default to
+`Shop::context()->branchId()`. If it is not bound, pass `branchId()`
+explicitly (or omit it for a global row).
 
 ## Extra attributes (structured JSON extension point)
 
@@ -261,13 +350,15 @@ $pi = Shop::productInterface()
 
 $product = Shop::product()
     ->productInterfaceId($pi->id)
-    ->sku('COF-1KG')
+    ->sku('COF-1KG-EXTRA')
     ->basePrice(1_200_000)
-    ->extra(['weight_grams' => 1000])
+    ->weightGrams(1000)
+    ->extra(['pack' => 'vacuum'])
     ->create();
 
 $pi->extra_attributes;      // ['origin' => 'brazil', 'roast' => 'medium']
-$product->extra_attributes; // ['weight_grams' => 1000]
+$product->weight_grams;     // 1000
+$product->extra_attributes; // ['pack' => 'vacuum']
 ```
 
 `->extra(array $attributes)` is available on `Shop::brand()`,
@@ -306,28 +397,29 @@ time-windowed price rows, one per `Product` (SKU). Reading happens through
 ```php
 Shop::price()
     ->productId($product->id)
+    ->currency('IRR')         // optional; defaults to shop.money.default_currency
     ->tier('retail')
     ->segmentId(null)
-    ->amount(1_200_000)
-    ->startsAt(now()->subDay())
-    ->endsAt(now()->addMonth())
-    ->save();
+    ->amount(1_200_000)       // or ['IRR' => 1_200_000, 'USD' => 12]
+    ->save();                 // starts_at/ends_at omitted => non-expiring
 
-Shop::price()
-    ->productId($product->id)
+Shop::prices()
+    ->forProductInterface($pi->id) // or ->forProductIds([1, 2, 3])
     ->tier('retail')
-    ->segmentId(7)
-    ->amount(1_000_000)
-    ->startsAt(now()->subDay())
-    ->endsAt(now()->addMonth())
-    ->save();
+    ->segmentId(null)
+    ->currency('IRR')
+    ->amount(1_200_000)
+    ->saveAll();
 ```
 
-**Inputs:** `productId()` (required), `tier()`, `segmentId()` (null =
-default/segment-less row — a **soft host key**, persisted on the
-`segment_id` column, never FK-constrained; `userGroupId()` is kept as an
-alias), `amount()` (int|float, >= 0), `startsAt()` / `endsAt()`
-(`DateTimeInterface|string|null`).
+**Inputs:** `productId()` (required), `currency()`, `tier()`, `segmentId()`
+(null = default/segment-less row — a **soft host key**; `userGroupId()` is
+kept as an alias), `branchId()`, `amount()` (int, or `currency => amount`
+map), `startsAt()` / `endsAt()` (optional; both null = non-expiring).
+
+Resolver match order for a quote: `product_id` + **required currency**,
+then branch (exact, else null when `inherit_global`), then segment (exact,
+else null), then tier (exact, else null).
 
 **Output:** the created model configured at `shop.models.product_price`.
 
@@ -541,5 +633,6 @@ builders:
   `StorefrontContext`, bound by the host.
 - **SMS, mail, or any other host action** — this package only reads/writes
   its own catalog tables.
-- **Tenant/branch resolution** — the host resolves `user_id`/`branch_id`; this
+- **Tenant/branch resolution** — the host may bind
+  `BranchContextResolverContract` or pass `branchId()` explicitly. This
   package never calls `Tenant::current()` or reads request headers.

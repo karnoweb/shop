@@ -101,6 +101,9 @@ final class PackageBootstrapTest extends TestCase
             'is_main',
             'base_price',
             'product_interface_id',
+            'branch_id',
+            'weight_grams',
+            'locked_at',
         ]));
     }
 }

@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
 use Karnoweb\Shop\Enums\ProductKindEnum;
+use Karnoweb\Shop\Enums\VariantsStatusEnum;
+use Karnoweb\Shop\Support\BranchScope;
 use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
@@ -24,6 +26,7 @@ use Karnoweb\Translation\Concerns\HasTranslation;
  */
 class ProductInterface extends BaseModel
 {
+    use BranchScope;
     use HasTranslation;
     use SoftDeletes;
 
@@ -36,9 +39,12 @@ class ProductInterface extends BaseModel
 
     protected $fillable = [
         'category_id',
+        'branch_id',
         'slug',
         'type',
         'kind',
+        'variants_status',
+        'variants_hash',
         'brand_id',
         'warning_quantity',
         'max_discount_percent',
@@ -59,6 +65,7 @@ class ProductInterface extends BaseModel
         return [
             'type' => ProductInterfaceTypeEnum::class,
             'kind' => ProductKindEnum::class,
+            'variants_status' => VariantsStatusEnum::class,
             'ladder_at' => 'datetime',
             'published_at' => 'datetime',
             'published' => 'boolean',

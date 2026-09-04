@@ -7,6 +7,7 @@ namespace Karnoweb\Shop\Builders;
 use Illuminate\Database\Eloquent\Model;
 use Karnoweb\Shop\Events\ProductSaved;
 use Karnoweb\Shop\Models\Product;
+use Karnoweb\Shop\Support\ShopContext;
 use Karnoweb\Shop\Support\ShopEventDispatcher;
 
 /**
@@ -29,6 +30,8 @@ class ProductBuilder
 {
     /** @var array<string, mixed> */
     private array $attributes = [];
+
+    private bool $branchIdSpecified = false;
 
     /** Set the owning product interface id. */
     public function productInterfaceId(int|string $productInterfaceId): self
@@ -94,6 +97,26 @@ class ProductBuilder
         return $this;
     }
 
+    /** Set weight in grams. Dimensions belong in extra_attributes. */
+    public function weightGrams(?int $grams): self
+    {
+        $this->attributes['weight_grams'] = $grams;
+
+        return $this;
+    }
+
+    /**
+     * Set the soft host branch key. Null = global catalog.
+     * When omitted, defaults to {@see ShopContext::branchId()} if a resolver is bound.
+     */
+    public function branchId(?int $branchId): self
+    {
+        $this->attributes['branch_id'] = $branchId;
+        $this->branchIdSpecified = true;
+
+        return $this;
+    }
+
     /** Set a single raw attribute understood by the configured Product model (escape hatch). */
     public function attribute(string $key, mixed $value): self
     {
@@ -143,8 +166,14 @@ class ProductBuilder
         /** @var class-string<Model> $class */
         $class = config('shop.models.product');
 
+        $attributes = $this->attributes;
+
+        if (! $this->branchIdSpecified) {
+            $attributes['branch_id'] = app(ShopContext::class)->branchId();
+        }
+
         /** @var Model $product */
-        $product = $class::query()->create($this->attributes);
+        $product = $class::query()->create($attributes);
 
         ShopEventDispatcher::dispatch(new ProductSaved(
             productId: $product->getKey(),

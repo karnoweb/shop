@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace Karnoweb\Shop\Enums;
 
+use Karnoweb\Shop\Models\ProductInterface;
+
+/**
+ * Variant/configuration shape of a {@see ProductInterface}.
+ *
+ * Inventory/sell behavior lives on {@see ProductKindEnum}, not here.
+ */
 enum ProductInterfaceTypeEnum: string
 {
     case SIMPLE = 'simple';
     case CODDING = 'codding';
-    case DIGITAL = 'digital';
-    case SERVICE = 'service';
 
     public function title(): string
     {
         return match ($this) {
             self::SIMPLE => __('shop::shop.product_interface.type.simple'),
             self::CODDING => __('shop::shop.product_interface.type.codding'),
-            self::DIGITAL => __('shop::shop.product_interface.type.digital'),
-            self::SERVICE => __('shop::shop.product_interface.type.service'),
         };
     }
 

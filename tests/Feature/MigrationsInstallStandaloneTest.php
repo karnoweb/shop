@@ -65,13 +65,17 @@ final class MigrationsInstallStandaloneTest extends TestCase
         // host concern behind StorefrontContext, not a package-owned table.
         $this->assertFalse(Schema::hasTable('user_wishlists'), 'user_wishlists must not be created by this package.');
 
-        $this->assertTrue(Schema::hasColumns('product_interfaces', ['kind', 'extra_attributes']));
+        $this->assertTrue(Schema::hasColumns('product_interfaces', ['kind', 'extra_attributes', 'branch_id', 'variants_status', 'variants_hash']));
         $this->assertTrue(Schema::hasColumn('product_interfaces', 'category_id'));
-        $this->assertTrue(Schema::hasColumns('products', ['extra_attributes', 'default_uom_code']));
+        $this->assertTrue(Schema::hasColumns('products', ['extra_attributes', 'default_uom_code', 'branch_id', 'weight_grams', 'locked_at', 'locked_reason', 'locked_by']));
+        $this->assertFalse(Schema::hasColumn('products', 'weight'), 'weight was replaced by weight_grams.');
+        $this->assertFalse(Schema::hasColumn('products', 'height'), 'height moved to extra_attributes.');
+        $this->assertFalse(Schema::hasColumn('products', 'length'), 'length moved to extra_attributes.');
+        $this->assertFalse(Schema::hasColumn('products', 'width'), 'width moved to extra_attributes.');
         $this->assertTrue(Schema::hasColumn('brands', 'extra_attributes'));
-        $this->assertTrue(Schema::hasColumn('product_prices', 'segment_id'));
+        $this->assertTrue(Schema::hasColumns('product_prices', ['segment_id', 'branch_id', 'currency']));
         $this->assertFalse(Schema::hasColumn('product_prices', 'user_group_id'), 'user_group_id was renamed to segment_id.');
-        $this->assertTrue(Schema::hasColumn('campaigns', 'external_discount_id'));
+        $this->assertTrue(Schema::hasColumns('campaigns', ['external_discount_id', 'branch_id', 'payload']));
         $this->assertFalse(Schema::hasColumn('campaigns', 'discount_id'), 'discount_id was renamed to external_discount_id.');
 
         // Never provided by this package — proves no hard dependency was created on them.
