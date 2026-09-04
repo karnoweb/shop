@@ -71,6 +71,12 @@ php artisan vendor:publish --tag=shop-migrations
 php artisan migrate
 ```
 
+The whole catalog schema ships as a **single squashed migration**
+(`database/migrations_squashed/2026_09_04_000000_create_shop_schema.php`) —
+one file creates every table in its final form. The old incremental
+migrations are kept under `database/migrations_legacy/` purely as historical
+reference; they are never loaded or published.
+
 Point `shop.models.*` (or the matching `SHOP_*_MODEL` env vars) at your host
 subclasses (e.g. `App\Models\Brand extends Karnoweb\Shop\Models\Brand`).
 Builders always resolve the model class through this config, so host
@@ -104,6 +110,7 @@ $product = Shop::product()
     ->sku('COF-1KG')
     ->isMain(true)
     ->basePrice(1_200_000)
+    ->defaultUomCode('kg')    // optional, purely informational (see below)
     ->published(true)
     ->create();
 
@@ -236,6 +243,21 @@ Because the column is plain `json`, it stays query-friendly with
 `whereJsonContains()` / `->where('extra_attributes->origin', 'brazil')` on
 supporting databases — no separate EAV tables are introduced.
 
+## Default unit of measure (optional)
+
+`Product.default_uom_code` is an optional, nullable string column — purely
+informational metadata (e.g. `"kg"`, `"pcs"`) so host purchase/sales
+documents can pick a sensible default unit without this package integrating
+with `karnoweb/laravel-inventory`'s UOM tables:
+
+```php
+Shop::product()->productInterfaceId($pi->id)->sku('COF-1KG')->basePrice(1_200_000)->defaultUomCode('kg')->create();
+```
+
+If you'd rather not use the dedicated column, the same convention works via
+`extra_attributes['default_uom_code']` — both are supported; the column
+exists because it's a common-enough need to warrant one.
+
 ## Price records (ProductPrice)
 
 `Shop::price()` is a **writer**, not a resolver — use it to create
@@ -272,7 +294,7 @@ default/group-less row — a **soft host key**, never FK-constrained), `amount()
 `startsAt <= endsAt` when both are set; `amount >= 0`; `productId` must
 resolve to an existing row on the model configured at `shop.models.product`.
 
-## Quote: pure DTO handoff to commerce
+## Quote: a generic, pure DTO handoff to commerce
 
 `Shop::quote()` resolves a **portable, immutable `PriceQuote` DTO** — no
 dependency on `karnoweb/commerce` or any host class, in either direction.
@@ -288,13 +310,17 @@ $quote = Shop::quote()
 ```
 
 **Inputs:** `productId()` (required, must exist), `tier()` (optional),
-`userGroupId()` (optional).
+`userGroupId()` (optional). `itemId()` is a generic alias for `productId()`,
+and `itemType()` (default `"shop.product"`) labels *what kind of sellable*
+is being quoted — see below.
 
 **Output — `PriceQuote` fields:**
 
 | Field | Type | Meaning |
 |---|---|---|
-| `productId` | `int` | Product (SKU) the quote is for |
+| `itemType` | `string` | Generic sellable-item type; currently always `"shop.product"` (see note below) |
+| `itemId` | `int\|null` | Same as `productId` for the current `"shop.product"` item type |
+| `productId` | `int` | Product (SKU) the quote is for — kept alongside `itemId` for backward compatibility |
 | `tier` | `string\|null` | The tier the caller asked for |
 | `userGroupId` | `int\|null` | The soft host user-group key the caller asked for |
 | `basePrice` | `int` | Price resolved by `ProductPriceResolver` for this tier/group — see `source` — before any campaign adjustment |
@@ -304,12 +330,19 @@ $quote = Shop::quote()
 | `discountPercent` | `float\|null` | Discount percent, when known/computable |
 | `campaignId` | `int\|null` | Campaign id, when the host's `CampaignPriceAdjuster` reports one |
 | `source` | `string` | Which strategy produced `basePrice`: `"user_group_price"` \| `"tier_price"` \| `"default_price"` \| `"base_price"` |
+| `uomCode` | `string\|null` | The product's `default_uom_code`, when set |
 
 ```php
 $quote->basePrice;   // int
 $quote->source;      // "user_group_price" | "tier_price" | "default_price" | "base_price"
 $quote->toCommerceSnapshot(); // array safe to store in commerce OrderItem.extra_attributes
 ```
+
+**Why `itemType`/`itemId`?** `PriceQuote` is deliberately not "product only":
+`QuoteService` only resolves catalog `Product` rows today (so `itemType` is
+always `"shop.product"`, `itemId === productId`), but the DTO/snapshot shape
+already leaves room for future sellable types (e.g. `"shop.variant"`,
+`"shop.module"`) **without a contract change** on the commerce/host side.
 
 ### Handoff to commerce
 
@@ -319,6 +352,8 @@ host/commerce layer can depend on:
 
 ```php
 [
+    'item_type' => 'shop.product',
+    'item_id' => 123,
     'product_id' => 123,
     'tier' => 'retail',
     'user_group_id' => 7,
@@ -329,13 +364,18 @@ host/commerce layer can depend on:
     'discount_percent' => null,
     'campaign_id' => null,
     'source' => 'user_group_price',
+    'uom_code' => null,
 ]
 ```
 
-Persist this array as-is in something like `commerce.OrderItem.extra_attributes`
-at the moment of checkout. `PriceQuote::fromArray($snapshot)` rebuilds the DTO
-from a stored snapshot when you need to re-inspect it later (e.g. for
-refunds/audits) — this package never reads or writes commerce tables itself.
+`item_type`/`item_id` are the minimum stable keys a generic "sellable
+snapshot" consumer should read; `product_id` is kept alongside them for
+existing snapshot consumers. Persist this array as-is in something like
+`commerce.OrderItem.extra_attributes` at the moment of checkout.
+`PriceQuote::fromArray($snapshot)` rebuilds the DTO from a stored snapshot
+when you need to re-inspect it later (e.g. for refunds/audits) — tolerating
+snapshots stored before `item_type`/`item_id`/`uom_code` existed. This
+package never reads or writes commerce tables itself.
 
 ### QuoteService (without the builder)
 

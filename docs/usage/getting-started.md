@@ -8,7 +8,7 @@ php artisan vendor:publish --tag=shop-lang         # اختیاری
 php artisan migrate
 ```
 
-مایگریشن‌ها با تاریخ ثابت `2022_01_01_100*` پابلیش می‌شوند تا زود اجرا شوند و نام فایل‌ها پایدار بماند. جداول پیش‌فرض بدون پیشوندند (`products`, `brands`, …)؛ در صورت نیاز:
+از نسخهٔ ۱۳.۳ به بعد کل schema در **یک migration فشرده** (`database/migrations_squashed`) پابلیش می‌شود؛ مایگریشن‌های قدیمی تکه‌تکه (`database/migrations_legacy`) فقط برای مرجع تاریخی نگه داشته شده‌اند و اجرا نمی‌شوند. جداول پیش‌فرض بدون پیشوندند (`products`, `brands`, …)؛ در صورت نیاز:
 
 ```env
 SHOP_TABLE_PREFIX=

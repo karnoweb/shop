@@ -27,9 +27,15 @@ readonly class QuoteService
      * @param  Model  $product  Catalog product (host or package model)
      * @param  int|null  $userGroupId  Soft host user-group key, or null
      * @param  string|null  $tier  Optional portable price tier (e.g. retail, wholesale)
+     * @param  string  $itemType  Generic sellable-item type for the resulting snapshot
+     *                            (see {@see PriceQuote}); defaults to "shop.product".
      */
-    public function resolve(Model $product, ?int $userGroupId = null, ?string $tier = null): PriceQuote
-    {
+    public function resolve(
+        Model $product,
+        ?int $userGroupId = null,
+        ?string $tier = null,
+        string $itemType = 'shop.product',
+    ): PriceQuote {
         $detail = $this->priceResolver->resolveDetailedForUserGroupId($product, $userGroupId, $tier);
 
         $basePrice = $detail['price'];
@@ -58,8 +64,10 @@ readonly class QuoteService
             }
         }
 
+        $productId = (int) $product->getKey();
+
         return new PriceQuote(
-            productId: (int) $product->getKey(),
+            productId: $productId,
             tier: $tier,
             userGroupId: $userGroupId,
             basePrice: $basePrice,
@@ -69,6 +77,9 @@ readonly class QuoteService
             discountPercent: $discountPercent,
             campaignId: $campaignId,
             source: $source,
+            itemType: $itemType,
+            itemId: $productId,
+            uomCode: $product->getAttribute('default_uom_code'),
         );
     }
 }

@@ -82,6 +82,18 @@ class ProductBuilder
         return $this;
     }
 
+    /**
+     * Set the optional default unit-of-measure code (e.g. 'kg', 'pcs') — purely
+     * informational metadata for purchase/sales documents. This package never
+     * integrates with `karnoweb/laravel-inventory` UOM tables here.
+     */
+    public function defaultUomCode(?string $uomCode): self
+    {
+        $this->attributes['default_uom_code'] = $uomCode;
+
+        return $this;
+    }
+
     /** Set a single raw attribute understood by the configured Product model (escape hatch). */
     public function attribute(string $key, mixed $value): self
     {

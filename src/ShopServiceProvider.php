@@ -56,16 +56,19 @@ class ShopServiceProvider extends ServiceProvider
         ShopMorphMap::register();
 
         $this->loadTranslationsFrom(__DIR__.'/../lang', 'shop');
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        // Single squashed schema migration — see database/migrations_squashed.
+        // database/migrations_legacy is kept only as historical reference and
+        // is never loaded.
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations_squashed');
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__.'/../config/shop.php' => config_path('shop.php'),
             ], 'shop-config');
 
-            // Keep fixed 2022_* filenames so published migrations run early and keep stable names.
             $this->publishes([
-                __DIR__.'/../database/migrations' => database_path('migrations'),
+                __DIR__.'/../database/migrations_squashed' => database_path('migrations'),
             ], 'shop-migrations');
 
             $this->publishes([

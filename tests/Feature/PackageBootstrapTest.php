@@ -16,14 +16,15 @@ use Karnoweb\Shop\Shop;
 use Karnoweb\Shop\ShopServiceProvider;
 use Karnoweb\Shop\Tests\TestCase;
 
+/**
+ * No defineDatabaseMigrations() override here — {@see ShopServiceProvider::boot()}
+ * already registers the real squashed schema (database/migrations_squashed) for
+ * every test via RefreshDatabase, so this suite exercises the actual package
+ * schema rather than a parallel test-only fixture.
+ */
 final class PackageBootstrapTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function defineDatabaseMigrations(): void
-    {
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
-    }
 
     public function test_service_provider_is_registered(): void
     {
@@ -63,7 +64,8 @@ final class PackageBootstrapTest extends TestCase
 
     public function test_base_model_respects_empty_prefix(): void
     {
-        $model = new class extends BaseModel {
+        $model = new class extends BaseModel
+        {
             protected $table = 'brands';
         };
 

@@ -28,7 +28,17 @@ Host application
 └── karnoweb/commerce: Order, Invoice, Payment
 ```
 
-**Unit of measure:** use `karnoweb/laravel-inventory` `Uom` / `Inventory::uoms()` — not shop. The legacy `units` table and admin CRUD were retired.
+**Unit of measure:** use `karnoweb/laravel-inventory` `Uom` / `Inventory::uoms()` — not shop. The legacy `units` table and admin CRUD were retired. `products.default_uom_code` (optional, nullable string) is purely informational metadata for host purchase/sales documents — it is **not** an inventory integration point.
+
+## 1b. Database schema (squashed)
+
+The full catalog schema is a **single migration**:
+`database/migrations_squashed/2026_09_04_000000_create_shop_schema.php`.
+`ShopServiceProvider::boot()` loads only this path. The old incremental
+`2022_01_01_100*` migrations are kept under `database/migrations_legacy/` as
+historical reference only — never loaded, never published. Early development,
+no production data to preserve, so schema changes go directly into the
+squashed file rather than accumulating new incremental migrations.
 
 ## 2. Host model extension strategy
 
@@ -82,7 +92,7 @@ Mirrors CRM pattern with **Macroable** extension:
 - `Shop::model('product')` → configured model class (single resolution path for relations)
 - `Shop::macro('featuredSkus', fn () => …)` → host-specific helpers without forking
 - `Shop::brand()/productInterface()/product()/price()` → fresh fluent builders (`src/Builders/`) that create via `config('shop.models.*')`, never a hardcoded class. `productInterface()->kind()` sets the generic, inventory-agnostic business classification (`ProductKindEnum`: physical|service|digital|bundle); `brand()/productInterface()/product()` all accept `->extra(array $attributes)` for the structured `extra_attributes` JSON column.
-- `Shop::quote()`/`Shop::quotes()` → `QuoteBuilder`/`QuoteService` produce a portable `PriceQuote` DTO (`src/DTOs/`) for checkout handoff — no commerce dependency in either direction. See `docs/usage.md`.
+- `Shop::quote()`/`Shop::quotes()` → `QuoteBuilder`/`QuoteService` produce a portable `PriceQuote` DTO (`src/DTOs/`) for checkout handoff — no commerce dependency in either direction. The DTO/`toCommerceSnapshot()` are deliberately generic (`itemType`/`itemId`, currently always `"shop.product"`/`productId`) so Commerce can store a "sellable snapshot" without this package assuming "product" is the only sellable type it will ever quote; `productId` is kept for backward compatibility. `QuoteBuilder::itemId()`/`itemType()` are aliases/labels over the existing `productId()`. See `docs/usage.md`.
 
 Storefront session state (wishlist, cart, compare, ratings) is **not** in the catalog core. Host binds `Karnoweb\Shop\Contracts\StorefrontContext` (see `HostStorefrontContext`).
 
@@ -115,6 +125,7 @@ Host `App\Models\Product::getRemainingStockAttribute()` already dual-reads inven
 | 10 | Inventory dual-write + stock column removal ⏳ deferred |
 | 11 | Accounting-like builder surface: `Shop::brand()/productInterface()/product()/price()/quote()`, `PriceQuote` DTO, `QuoteService` ✅ |
 | 12 | Generic product `kind` (physical/service/digital/bundle), `extra_attributes` on `Product`, refined `PriceQuote` (`discountAmount`, `*_price` source strings) ✅ |
+| 13 | Squashed schema (`database/migrations_squashed`, legacy retained as reference only), generic `PriceQuote`/snapshot (`itemType`/`itemId`), `products.default_uom_code` ✅ |
 
 ## 10. What must NOT move into shop
 

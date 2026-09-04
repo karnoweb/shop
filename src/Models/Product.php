@@ -32,6 +32,7 @@ class Product extends BaseModel
         'width',
         'searchable_title',
         'extra_attributes',
+        'default_uom_code',
         'product_interface_id',
     ];
 

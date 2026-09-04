@@ -27,10 +27,8 @@ final class BuilderApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function defineDatabaseMigrations(): void
-    {
-        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
-    }
+    // No defineDatabaseMigrations() override — ShopServiceProvider::boot()
+    // already registers the real squashed schema for every test.
 
     protected function defineEnvironment($app): void
     {
@@ -117,6 +115,9 @@ final class BuilderApiTest extends TestCase
 
         $this->assertInstanceOf(PriceQuote::class, $quote);
         $this->assertSame($product->id, $quote->productId);
+        $this->assertSame('shop.product', $quote->itemType);
+        $this->assertSame($product->id, $quote->itemId);
+        $this->assertNull($quote->uomCode);
         $this->assertSame(1000000, $quote->basePrice);
         $this->assertSame(1000000, $quote->finalPrice);
         $this->assertFalse($quote->hasDiscount);
@@ -129,6 +130,8 @@ final class BuilderApiTest extends TestCase
 
         $snapshot = $quote->toCommerceSnapshot();
         $this->assertSame([
+            'item_type' => 'shop.product',
+            'item_id' => $product->id,
             'product_id' => $product->id,
             'tier' => 'retail',
             'user_group_id' => 7,
@@ -139,7 +142,13 @@ final class BuilderApiTest extends TestCase
             'discount_percent' => null,
             'campaign_id' => null,
             'source' => 'user_group_price',
+            'uom_code' => null,
         ], $snapshot);
+
+        // Minimum stable contract for a generic sellable snapshot (Commerce handoff).
+        $this->assertArrayHasKey('item_type', $snapshot);
+        $this->assertArrayHasKey('item_id', $snapshot);
+        $this->assertArrayHasKey('final_price', $snapshot);
 
         foreach ($snapshot as $key => $value) {
             $this->assertTrue(
@@ -150,6 +159,38 @@ final class BuilderApiTest extends TestCase
 
         $rebuilt = PriceQuote::fromArray($snapshot);
         $this->assertEquals($quote, $rebuilt);
+    }
+
+    public function test_quote_reports_uom_code_and_generic_item_type_when_set(): void
+    {
+        $productInterface = ShopFacade::productInterface()
+            ->slug('sack-of-rice-'.uniqid())
+            ->type('simple')
+            ->kind('physical')
+            ->categoryId(10)
+            ->published(true)
+            ->create();
+
+        $product = ShopFacade::product()
+            ->productInterfaceId($productInterface->id)
+            ->sku('RICE-'.uniqid())
+            ->basePrice(500_000)
+            ->defaultUomCode('kg')
+            ->published(true)
+            ->isMain(true)
+            ->create();
+
+        $this->assertSame('kg', $product->default_uom_code);
+
+        $quote = ShopFacade::quote()
+            ->itemType('shop.product')
+            ->itemId($product->id)
+            ->resolve();
+
+        $this->assertSame('kg', $quote->uomCode);
+        $this->assertSame('shop.product', $quote->itemType);
+        $this->assertSame($product->id, $quote->itemId);
+        $this->assertSame('kg', $quote->toCommerceSnapshot()['uom_code']);
     }
 
     public function test_quote_falls_back_to_default_price_for_unknown_user_group(): void

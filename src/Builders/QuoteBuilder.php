@@ -25,6 +25,8 @@ class QuoteBuilder
 {
     private int|string|null $productId = null;
 
+    private string $itemType = 'shop.product';
+
     private ?string $tier = null;
 
     private ?int $userGroupId = null;
@@ -37,6 +39,30 @@ class QuoteBuilder
     public function productId(int|string $productId): self
     {
         $this->productId = $productId;
+
+        return $this;
+    }
+
+    /**
+     * Generic alias for {@see self::productId()} — sets the id of the
+     * sellable item being quoted. Only `itemType('shop.product')` (the
+     * default) currently resolves to anything; other item types are reserved
+     * for future use (see {@see PriceQuote}).
+     */
+    public function itemId(int|string $itemId): self
+    {
+        return $this->productId($itemId);
+    }
+
+    /**
+     * Set the generic sellable-item type reported on the resulting
+     * {@see PriceQuote}. Defaults to `"shop.product"` and
+     * does not change how the item is resolved — this package only resolves
+     * catalog products today.
+     */
+    public function itemType(string $itemType): self
+    {
+        $this->itemType = $itemType;
 
         return $this;
     }
@@ -75,6 +101,6 @@ class QuoteBuilder
             throw new ProductNotFoundException($this->productId);
         }
 
-        return $this->quoteService->resolve($product, $this->userGroupId, $this->tier);
+        return $this->quoteService->resolve($product, $this->userGroupId, $this->tier, $this->itemType);
     }
 }

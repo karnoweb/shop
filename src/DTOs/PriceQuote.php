@@ -4,16 +4,25 @@ declare(strict_types=1);
 
 namespace Karnoweb\Shop\DTOs;
 
+use Karnoweb\Shop\Models\Product;
 use Karnoweb\Shop\Services\ProductPriceResolver;
 use Karnoweb\Shop\Services\QuoteService;
 
 /**
- * Immutable, portable price quote for a single product.
+ * Immutable, portable price quote for a single sellable item.
  *
  * Produced by {@see QuoteService} / `Shop::quote()->resolve()`. Pure data —
  * safe to serialize and hand off to host/commerce checkout flows via
  * {@see self::toCommerceSnapshot()} without this package (or the caller)
  * depending on `karnoweb/commerce` classes.
+ *
+ * Deliberately generic: `itemType`/`itemId` describe *what* is being quoted
+ * without assuming "product" is the only sellable thing Commerce will ever
+ * store a snapshot for. Today `QuoteService` only resolves catalog
+ * {@see Product} rows, so `itemType` defaults to and is
+ * currently always `"shop.product"` (with `itemId` === `productId`) — but the
+ * shape leaves room for future item types (e.g. `"shop.variant"`,
+ * `"shop.module"`) without a schema/contract change.
  *
  * `basePrice` is the price resolved by {@see ProductPriceResolver}
  * for the given `tier`/`userGroupId` — i.e. before any campaign adjustment —
@@ -38,6 +47,15 @@ final readonly class PriceQuote
          * "user_group_price"|"tier_price"|"default_price"|"base_price".
          */
         public string $source,
+        /**
+         * Generic sellable-item type. Currently always "shop.product" — see
+         * class docblock. Never a Commerce (or other host/domain) class.
+         */
+        public string $itemType = 'shop.product',
+        /** Same as `productId` for the current "shop.product" item type. */
+        public ?int $itemId = null,
+        /** Optional default unit-of-measure code (e.g. "kg", "pcs"), when known. */
+        public ?string $uomCode = null,
     ) {}
 
     /**
@@ -47,7 +65,13 @@ final readonly class PriceQuote
      * is a plain array of scalars/null so the host decides how/where to
      * persist it. Keys are stable and documented in docs/usage.md.
      *
+     * `item_type`/`item_id` are the generic, forward-compatible reference to
+     * the quoted sellable; `product_id` is kept alongside them for backward
+     * compatibility with existing snapshot consumers.
+     *
      * @return array{
+     *     item_type: string,
+     *     item_id: int|null,
      *     product_id: int,
      *     tier: string|null,
      *     user_group_id: int|null,
@@ -58,11 +82,14 @@ final readonly class PriceQuote
      *     discount_percent: float|null,
      *     campaign_id: int|null,
      *     source: string,
+     *     uom_code: string|null,
      * }
      */
     public function toCommerceSnapshot(): array
     {
         return [
+            'item_type' => $this->itemType,
+            'item_id' => $this->itemId,
             'product_id' => $this->productId,
             'tier' => $this->tier,
             'user_group_id' => $this->userGroupId,
@@ -73,18 +100,24 @@ final readonly class PriceQuote
             'discount_percent' => $this->discountPercent,
             'campaign_id' => $this->campaignId,
             'source' => $this->source,
+            'uom_code' => $this->uomCode,
         ];
     }
 
     /**
      * Rebuild a PriceQuote from a previously stored {@see self::toCommerceSnapshot()} array.
      *
+     * Tolerates snapshots stored before `item_type`/`item_id`/`uom_code`
+     * existed — falls back to `"shop.product"`/`product_id`/`null`.
+     *
      * @param  array<string, mixed>  $data
      */
     public static function fromArray(array $data): self
     {
+        $productId = (int) $data['product_id'];
+
         return new self(
-            productId: (int) $data['product_id'],
+            productId: $productId,
             tier: $data['tier'] ?? null,
             userGroupId: isset($data['user_group_id']) ? (int) $data['user_group_id'] : null,
             basePrice: (int) $data['base_price'],
@@ -94,6 +127,9 @@ final readonly class PriceQuote
             discountPercent: isset($data['discount_percent']) ? (float) $data['discount_percent'] : null,
             campaignId: isset($data['campaign_id']) ? (int) $data['campaign_id'] : null,
             source: (string) $data['source'],
+            itemType: (string) ($data['item_type'] ?? 'shop.product'),
+            itemId: isset($data['item_id']) ? (int) $data['item_id'] : $productId,
+            uomCode: $data['uom_code'] ?? null,
         );
     }
 }

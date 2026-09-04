@@ -44,44 +44,54 @@ final class NoHardHostForeignKeyMigrationTest extends TestCase
         'discounts',
     ];
 
+    /** @var list<string> Migration directories to guard (loaded squashed schema + retained legacy reference). */
+    private const SCANNED_DIRECTORIES = ['database/migrations_squashed', 'database/migrations_legacy'];
+
     public function test_migrations_do_not_hard_foreign_key_host_or_cross_domain_tables(): void
     {
-        $migrations = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'database'.DIRECTORY_SEPARATOR.'migrations';
+        $root = dirname(__DIR__, 2);
 
-        foreach (SourceScanner::phpFiles($migrations) as $file) {
-            $contents = (string) file_get_contents($file);
+        foreach (self::SCANNED_DIRECTORIES as $directory) {
+            $migrations = $root.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $directory);
 
-            foreach (self::FORBIDDEN_FOREIGN_KEY_TABLES as $table) {
-                $quoted = preg_quote($table, '/');
+            $files = SourceScanner::phpFiles($migrations);
+            $this->assertNotSame([], $files, "Expected at least one PHP file under {$directory}.");
+
+            foreach ($files as $file) {
+                $contents = (string) file_get_contents($file);
+
+                foreach (self::FORBIDDEN_FOREIGN_KEY_TABLES as $table) {
+                    $quoted = preg_quote($table, '/');
+
+                    $this->assertDoesNotMatchRegularExpression(
+                        "/->constrained\\(\\s*['\"]{$quoted}['\"]/i",
+                        $contents,
+                        "Migration {$file} declares ->constrained('{$table}'), a hard FK to a host/cross-domain table."
+                    );
+
+                    $this->assertDoesNotMatchRegularExpression(
+                        "/->on\\(\\s*['\"]{$quoted}['\"]/i",
+                        $contents,
+                        "Migration {$file} declares ->on('{$table}'), a hard FK to a host/cross-domain table."
+                    );
+                }
+
+                foreach (self::FORBIDDEN_SCHEMA_TARGETS as $table) {
+                    $quoted = preg_quote($table, '/');
+
+                    $this->assertDoesNotMatchRegularExpression(
+                        "/Schema::(table|create)\\(\\s*['\"]{$quoted}['\"]/i",
+                        $contents,
+                        "Migration {$file} alters host/cross-domain table [{$table}]; each package owns only its own schema."
+                    );
+                }
 
                 $this->assertDoesNotMatchRegularExpression(
-                    "/->constrained\\(\\s*['\"]{$quoted}['\"]/i",
+                    '/^use\s+App\\\\/m',
                     $contents,
-                    "Migration {$file} declares ->constrained('{$table}'), a hard FK to a host/cross-domain table."
-                );
-
-                $this->assertDoesNotMatchRegularExpression(
-                    "/->on\\(\\s*['\"]{$quoted}['\"]/i",
-                    $contents,
-                    "Migration {$file} declares ->on('{$table}'), a hard FK to a host/cross-domain table."
+                    "Migration {$file} imports a host App\\ namespace. Migrations must be installable standalone."
                 );
             }
-
-            foreach (self::FORBIDDEN_SCHEMA_TARGETS as $table) {
-                $quoted = preg_quote($table, '/');
-
-                $this->assertDoesNotMatchRegularExpression(
-                    "/Schema::(table|create)\\(\\s*['\"]{$quoted}['\"]/i",
-                    $contents,
-                    "Migration {$file} alters host/cross-domain table [{$table}]; each package owns only its own schema."
-                );
-            }
-
-            $this->assertDoesNotMatchRegularExpression(
-                '/^use\s+App\\\\/m',
-                $contents,
-                "Migration {$file} imports a host App\\ namespace. Migrations must be installable standalone."
-            );
         }
     }
 }

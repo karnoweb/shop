@@ -8,8 +8,9 @@ use Karnoweb\Shop\Tests\Support\SourceScanner;
 use Karnoweb\Shop\Tests\TestCase;
 
 /**
- * Package-wide guard across `src/`, `database/migrations/`, and `tests/`:
- * nothing may import a host `App\*` class or the `karnoweb/commerce` package.
+ * Package-wide guard across `src/`, `database/migrations_squashed/`,
+ * `database/migrations_legacy/`, and `tests/`: nothing may import a host
+ * `App\*` class or the `karnoweb/commerce` package.
  *
  * Complements the narrower, more targeted checks already in
  * {@see NoHostDependencyTest} (src only, broader forbidden list incl.
@@ -21,7 +22,12 @@ use Karnoweb\Shop\Tests\TestCase;
 final class NoAppOrCommerceImportsAnywhereTest extends TestCase
 {
     /** @var list<string> */
-    private const SCANNED_DIRECTORIES = ['src', 'database/migrations', 'tests'];
+    private const SCANNED_DIRECTORIES = [
+        'src',
+        'database/migrations_squashed',
+        'database/migrations_legacy',
+        'tests',
+    ];
 
     /** @var list<string> */
     private const FORBIDDEN = [
