@@ -8,13 +8,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Time-windowed product price, optionally scoped to a host user group.
+ * Time-windowed product price, optionally scoped to a host segment
+ * (typically a user group, but generic enough for any soft host
+ * segmentation key — see `segment_id`).
  */
 class ProductPrice extends BaseModel
 {
     protected $fillable = [
         'product_id',
-        'user_group_id',
+        'segment_id',
         'tier',
         'price',
         'starts_at',
@@ -36,11 +38,19 @@ class ProductPrice extends BaseModel
     }
 
     /**
-     * Soft host user-group relation.
+     * Soft host segment relation (typically the host's user-group model).
+     */
+    public function segment(): BelongsTo
+    {
+        return $this->belongsTo(config('shop.models.user_group'), 'segment_id');
+    }
+
+    /**
+     * @deprecated Alias for {@see self::segment()} — kept for backward compatibility.
      */
     public function userGroup(): BelongsTo
     {
-        return $this->belongsTo(config('shop.models.user_group'));
+        return $this->segment();
     }
 
     public function scopeActive(Builder $query): Builder
@@ -54,9 +64,17 @@ class ProductPrice extends BaseModel
         });
     }
 
-    public function scopeForGroup(Builder $query, ?int $userGroupId): Builder
+    public function scopeForSegment(Builder $query, int|string|null $segmentId): Builder
     {
-        return $query->where('user_group_id', $userGroupId);
+        return $query->where('segment_id', $segmentId);
+    }
+
+    /**
+     * @deprecated Alias for {@see self::scopeForSegment()} — kept for backward compatibility.
+     */
+    public function scopeForGroup(Builder $query, int|string|null $userGroupId): Builder
+    {
+        return $this->scopeForSegment($query, $userGroupId);
     }
 
     public function scopeForTier(Builder $query, ?string $tier): Builder
@@ -66,6 +84,6 @@ class ProductPrice extends BaseModel
 
     public function scopeDefault(Builder $query): Builder
     {
-        return $query->whereNull('user_group_id');
+        return $query->whereNull('segment_id');
     }
 }

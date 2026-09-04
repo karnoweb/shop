@@ -15,7 +15,9 @@ Brand / Category (میزبان)
 | **Product** | واحد فروش؛ `is_main` برای واریانت اصلی |
 | **Brand** | برند؛ فیلدهای متنی با `HasTranslation` |
 | **Attribute*** | تعریف ویژگی، گروه، مقدار؛ اتصال به محصول و دسته |
-| **WishList** | علاقه‌مندی morph به موجودیت دلخواه |
+
+> علاقه‌مندی (wishlist) دیگر جدول مستقل پکیج نیست — کاملاً از طریق قرارداد میزبان
+> `StorefrontContext` مدیریت می‌شود (بدون جدول `user_wishlists`).
 
 ## انواع ProductInterface
 

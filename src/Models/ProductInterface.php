@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
 use Karnoweb\Shop\Enums\ProductKindEnum;
+use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
 /**
@@ -101,7 +102,7 @@ class ProductInterface extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.category'),
-            'product_interface_secondary_categories',
+            ShopTables::name('product_interface_secondary_categories'),
             'product_interface_id',
             'category_id'
         );
@@ -111,7 +112,7 @@ class ProductInterface extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute', Attribute::class),
-            'product_interface_attributes',
+            ShopTables::name('product_interface_attributes'),
             'product_interface_id',
             'attribute_id'
         )->withPivot('codding');
@@ -121,7 +122,7 @@ class ProductInterface extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute', Attribute::class),
-            'product_interface_attributes',
+            ShopTables::name('product_interface_attributes'),
             'product_interface_id',
             'attribute_id'
         )
@@ -133,7 +134,7 @@ class ProductInterface extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute_value', AttributeValue::class),
-            'product_interface_attribute_values'
+            ShopTables::name('product_interface_attribute_values')
         )->withPivot('attribute_id');
     }
 
@@ -141,7 +142,7 @@ class ProductInterface extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.product_interface', static::class),
-            'product_interface_complementary',
+            ShopTables::name('product_interface_complementary'),
             'product_interface_id',
             'complementary_id'
         );

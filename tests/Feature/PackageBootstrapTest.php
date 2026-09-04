@@ -36,7 +36,7 @@ final class PackageBootstrapTest extends TestCase
         $this->assertTrue($this->app->bound('shop'));
         $this->assertSame($this->app->make('shop'), $this->app->make('shop'));
         $this->assertInstanceOf(Shop::class, ShopFacade::getFacadeRoot());
-        $this->assertSame('', ShopFacade::config('tables.prefix'));
+        $this->assertSame('', ShopFacade::config('general.prefix'));
     }
 
     public function test_shop_facade_exposes_services(): void

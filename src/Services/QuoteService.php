@@ -69,7 +69,7 @@ readonly class QuoteService
         return new PriceQuote(
             productId: $productId,
             tier: $tier,
-            userGroupId: $userGroupId,
+            segmentId: $userGroupId,
             basePrice: $basePrice,
             finalPrice: $finalPrice,
             hasDiscount: $hasDiscount,

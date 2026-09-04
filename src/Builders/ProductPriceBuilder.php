@@ -34,9 +34,9 @@ class ProductPriceBuilder
 
     private ?string $tier = null;
 
-    private ?int $userGroupId = null;
+    private ?int $segmentId = null;
 
-    private bool $userGroupIdSpecified = false;
+    private bool $segmentIdSpecified = false;
 
     private int|float|null $amount = null;
 
@@ -60,13 +60,24 @@ class ProductPriceBuilder
         return $this;
     }
 
-    /** Set the soft host user-group key. Pass null for the default (group-less) price row. */
-    public function userGroupId(?int $userGroupId): self
+    /**
+     * Set the soft host segment key (persisted on the `segment_id` column).
+     * Pass null for the default (segment-less) price row.
+     */
+    public function segmentId(?int $segmentId): self
     {
-        $this->userGroupId = $userGroupId;
-        $this->userGroupIdSpecified = true;
+        $this->segmentId = $segmentId;
+        $this->segmentIdSpecified = true;
 
         return $this;
+    }
+
+    /**
+     * @deprecated Alias for {@see self::segmentId()} — kept for backward compatibility.
+     */
+    public function userGroupId(?int $userGroupId): self
+    {
+        return $this->segmentId($userGroupId);
     }
 
     /** Set the price amount (smallest currency unit). Must be >= 0. */
@@ -127,8 +138,8 @@ class ProductPriceBuilder
             $attributes['tier'] = $this->tier;
         }
 
-        if ($this->userGroupIdSpecified) {
-            $attributes['user_group_id'] = $this->userGroupId;
+        if ($this->segmentIdSpecified) {
+            $attributes['segment_id'] = $this->segmentId;
         }
 
         if ($this->amount !== null) {

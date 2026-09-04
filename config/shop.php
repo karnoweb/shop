@@ -5,6 +5,13 @@ declare(strict_types=1);
 return [
     /*
     |--------------------------------------------------------------------------
+    | Enabled
+    |--------------------------------------------------------------------------
+    */
+    'enabled' => env('SHOP_ENABLED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Host models (soft references only — never FK-constrained in package code)
     |--------------------------------------------------------------------------
     */
@@ -20,7 +27,6 @@ return [
         'attribute' => env('SHOP_ATTRIBUTE_MODEL', 'App\\Models\\Attribute'),
         'attribute_group' => env('SHOP_ATTRIBUTE_GROUP_MODEL', 'App\\Models\\AttributeGroup'),
         'attribute_value' => env('SHOP_ATTRIBUTE_VALUE_MODEL', 'App\\Models\\AttributeValue'),
-        'wishlist' => env('SHOP_WISHLIST_MODEL', 'App\\Models\\WishList'),
         'campaign' => env('SHOP_CAMPAIGN_MODEL', 'App\\Models\\Campaign'),
         'discount' => env('SHOP_DISCOUNT_MODEL', 'App\\Models\\Discount'),
         'order_item' => env('SHOP_ORDER_ITEM_MODEL', 'App\\Models\\OrderItem'),
@@ -39,15 +45,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Table prefix
+    | Table prefix & configurable table names
     |--------------------------------------------------------------------------
     |
-    | Existing Karno deployments use unprefixed catalog tables (brands, products).
-    | Default empty prefix preserves table names during extraction.
+    | Same pattern as `karnoweb/laravel-inventory`: every table this package
+    | owns is prefixed with `general.prefix` (default "shp_") unless an exact
+    | name is configured under `tables.<key>`. Configure BEFORE running
+    | `php artisan migrate` — changing the prefix afterwards does not rename
+    | already-created tables. See {@see \Karnoweb\Shop\Support\ShopTables}.
     |
     */
+    'general' => [
+        'prefix' => env('SHOP_TABLE_PREFIX', 'shp_'),
+    ],
+
     'tables' => [
-        'prefix' => env('SHOP_TABLE_PREFIX', ''),
+        'brands' => env('SHOP_TABLE_BRANDS'),
+        'attribute_groups' => env('SHOP_TABLE_ATTRIBUTE_GROUPS'),
+        'attributes' => env('SHOP_TABLE_ATTRIBUTES'),
+        'attribute_values' => env('SHOP_TABLE_ATTRIBUTE_VALUES'),
+        'product_interfaces' => env('SHOP_TABLE_PRODUCT_INTERFACES'),
+        'products' => env('SHOP_TABLE_PRODUCTS'),
+        'campaigns' => env('SHOP_TABLE_CAMPAIGNS'),
+        'product_prices' => env('SHOP_TABLE_PRODUCT_PRICES'),
+        'category_attribute_group' => env('SHOP_TABLE_CATEGORY_ATTRIBUTE_GROUP'),
+        'attribute_attribute_group' => env('SHOP_TABLE_ATTRIBUTE_ATTRIBUTE_GROUP'),
+        'product_interface_attributes' => env('SHOP_TABLE_PRODUCT_INTERFACE_ATTRIBUTES'),
+        'product_interface_attribute_values' => env('SHOP_TABLE_PRODUCT_INTERFACE_ATTRIBUTE_VALUES'),
+        'product_attribute_values' => env('SHOP_TABLE_PRODUCT_ATTRIBUTE_VALUES'),
+        'product_interface_secondary_categories' => env('SHOP_TABLE_PRODUCT_INTERFACE_SECONDARY_CATEGORIES'),
+        'product_interface_complementary' => env('SHOP_TABLE_PRODUCT_INTERFACE_COMPLEMENTARY'),
     ],
 
     /*

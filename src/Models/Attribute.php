@@ -7,13 +7,14 @@ namespace Karnoweb\Shop\Models;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Karnoweb\Shop\Enums\AttributeTypeEnum;
+use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
 /**
  * Lean catalog attribute. Host extends for activity log.
  *
  * @property string|null $title
- * @property mixed       $pivot
+ * @property mixed $pivot
  */
 class Attribute extends BaseModel
 {
@@ -56,7 +57,7 @@ class Attribute extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.product_interface', ProductInterface::class),
-            'product_interface_attributes'
+            ShopTables::name('product_interface_attributes')
         )
             ->withPivot('special', 'codding')
             ->withTimestamps();
@@ -66,7 +67,7 @@ class Attribute extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute_group', AttributeGroup::class),
-            'attribute_attribute_group',
+            ShopTables::name('attribute_attribute_group'),
             'attribute_id',
             'attribute_group_id'
         );

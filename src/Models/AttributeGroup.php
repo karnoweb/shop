@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Karnoweb\Shop\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
 /**
@@ -38,7 +39,7 @@ class AttributeGroup extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute', Attribute::class),
-            'attribute_attribute_group',
+            ShopTables::name('attribute_attribute_group'),
             'attribute_group_id',
             'attribute_id'
         );
@@ -51,7 +52,7 @@ class AttributeGroup extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.category'),
-            'category_attribute_group'
+            ShopTables::name('category_attribute_group')
         );
     }
 }

@@ -22,7 +22,7 @@ ProductPrice::query()->create([
     'product_id' => $product->id,
     'price' => 1_200_000,
     'tier' => 'retail',
-    'user_group_id' => null,
+    'segment_id' => null, // ستون قبلی user_group_id بود؛ اسکوپ/متد forGroup()/userGroupId() هنوز به‌عنوان alias کار می‌کنند
     'starts_at' => now()->subDay(),
     'ends_at' => now()->addMonth(),
 ]);

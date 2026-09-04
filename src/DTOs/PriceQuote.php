@@ -25,7 +25,7 @@ use Karnoweb\Shop\Services\QuoteService;
  * `"shop.module"`) without a schema/contract change.
  *
  * `basePrice` is the price resolved by {@see ProductPriceResolver}
- * for the given `tier`/`userGroupId` — i.e. before any campaign adjustment —
+ * for the given `tier`/`segmentId` — i.e. before any campaign adjustment —
  * and `source` reports which strategy produced it (see {@see self::$source}).
  * `finalPrice` is `basePrice` after an optional campaign adjustment; they are
  * equal when no `CampaignPriceAdjuster` is bound.
@@ -35,7 +35,8 @@ final readonly class PriceQuote
     public function __construct(
         public int $productId,
         public ?string $tier,
-        public ?int $userGroupId,
+        /** Soft host segmentation key (typically a user-group id). */
+        public ?int $segmentId,
         public int $basePrice,
         public int $finalPrice,
         public bool $hasDiscount,
@@ -67,13 +68,16 @@ final readonly class PriceQuote
      *
      * `item_type`/`item_id` are the generic, forward-compatible reference to
      * the quoted sellable; `product_id` is kept alongside them for backward
-     * compatibility with existing snapshot consumers.
+     * compatibility with existing snapshot consumers. `segment_id` is the
+     * canonical key for the soft host segmentation id; `user_group_id` is
+     * kept alongside it (same value) since it was already published.
      *
      * @return array{
      *     item_type: string,
      *     item_id: int|null,
      *     product_id: int,
      *     tier: string|null,
+     *     segment_id: int|null,
      *     user_group_id: int|null,
      *     base_price: int,
      *     final_price: int,
@@ -92,7 +96,9 @@ final readonly class PriceQuote
             'item_id' => $this->itemId,
             'product_id' => $this->productId,
             'tier' => $this->tier,
-            'user_group_id' => $this->userGroupId,
+            'segment_id' => $this->segmentId,
+            // Backward-compatible alias — already published, same value as `segment_id`.
+            'user_group_id' => $this->segmentId,
             'base_price' => $this->basePrice,
             'final_price' => $this->finalPrice,
             'has_discount' => $this->hasDiscount,
@@ -108,7 +114,9 @@ final readonly class PriceQuote
      * Rebuild a PriceQuote from a previously stored {@see self::toCommerceSnapshot()} array.
      *
      * Tolerates snapshots stored before `item_type`/`item_id`/`uom_code`
-     * existed — falls back to `"shop.product"`/`product_id`/`null`.
+     * existed — falls back to `"shop.product"`/`product_id`/`null`. Prefers
+     * the canonical `segment_id` key, falling back to the legacy
+     * `user_group_id` key for snapshots stored before the rename.
      *
      * @param  array<string, mixed>  $data
      */
@@ -116,10 +124,12 @@ final readonly class PriceQuote
     {
         $productId = (int) $data['product_id'];
 
+        $segmentId = $data['segment_id'] ?? $data['user_group_id'] ?? null;
+
         return new self(
             productId: $productId,
             tier: $data['tier'] ?? null,
-            userGroupId: isset($data['user_group_id']) ? (int) $data['user_group_id'] : null,
+            segmentId: $segmentId !== null ? (int) $segmentId : null,
             basePrice: (int) $data['base_price'],
             finalPrice: (int) $data['final_price'],
             hasDiscount: (bool) $data['has_discount'],

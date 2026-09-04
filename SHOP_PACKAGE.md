@@ -17,7 +17,7 @@
 karnoweb/shop (catalog)
 ├── ProductInterface, Product, ProductPrice
 ├── Brand, Attribute*, Campaign (shop marketing)
-├── WishList, pricing/filter services
+├── pricing/filter services (wishlist/cart/compare state: host StorefrontContext, no package table)
 ├── Content via karnoweb/translation (HasTranslation on catalog models)
 └── Events: catalog lifecycle (future)
 
@@ -40,6 +40,22 @@ historical reference only — never loaded, never published. Early development,
 no production data to preserve, so schema changes go directly into the
 squashed file rather than accumulating new incremental migrations.
 
+There is no `user_wishlists` table (or `WishList` model) — wishlist/cart/
+compare/rating session state is entirely a host concern behind
+`Karnoweb\Shop\Contracts\StorefrontContext`, never a package-owned table.
+
+## 1c. Table prefix & configurable table names
+
+Every table this package owns is resolved through
+`Karnoweb\Shop\Support\ShopTables::name($key)` (same pattern as
+`karnoweb/laravel-inventory`'s `BaseModel`): it prepends
+`config('shop.general.prefix')` (env `SHOP_TABLE_PREFIX`, **default
+`"shp_"`**) unless an exact override is set at `config('shop.tables.<key>')`.
+`Karnoweb\Shop\Models\BaseModel::getTable()` and the squashed migration both
+go through `ShopTables`, so Eloquent and raw schema/query builder calls
+always agree on the physical table name. Must be configured **before**
+`php artisan migrate` — see `docs/usage.md#table-prefix--configurable-table-names`.
+
 ## 2. Host model extension strategy
 
 Lean models live in the package with `Karnoweb\Translation\Concerns\HasTranslation` for translatable fields. The host extends them for:
@@ -50,7 +66,10 @@ Lean models live in the package with `Karnoweb\Translation\Concerns\HasTranslati
 
 ## 3. Table naming
 
-Existing deployments use **unprefixed** catalog tables (`brands`, `products`). Default `shop.tables.prefix` is empty.
+See §1b/§1c — every table is prefixed (default `shp_...`) or exactly
+overridable via `Karnoweb\Shop\Support\ShopTables`. Existing pre-13.4
+deployments that relied on unprefixed catalog tables (`brands`, `products`)
+should set `SHOP_TABLE_PREFIX=` (empty) before migrating to keep those names.
 
 ## 4. Morph map
 
@@ -65,9 +84,14 @@ Commerce `OrderItem.itemable` must use config `shop.models.product` for product 
 | Strategy | Column | When to use |
 |----------|--------|-------------|
 | **Tier** | `tier` (string, e.g. `retail`, `wholesale`) | Greenfield / projects without `UserGroup` |
-| **User group** | `user_group_id` (soft FK) | This Karno host (`UserGroupSeeder` retail/wholesale) |
+| **Segment** | `segment_id` (soft key; renamed from `user_group_id`) | This Karno host (`UserGroupSeeder` retail/wholesale) |
 
-`ProductPriceResolver` order: user group → explicit tier → default (null group) → `base_price`.
+`ProductPriceBuilder::segmentId()`/`QuoteBuilder::segmentId()` are the
+canonical builder methods; `userGroupId()` remains as an alias on both.
+`ProductPriceResolver`'s public method/parameter names (`resolveForUserGroupId`,
+etc.) are unchanged — only the underlying `segment_id` column was renamed.
+
+`ProductPriceResolver` order: segment → explicit tier → default (null segment) → `base_price`.
 
 Campaign adjustments remain host-bridged via `CampaignPriceAdjuster` contract.
 
@@ -126,6 +150,7 @@ Host `App\Models\Product::getRemainingStockAttribute()` already dual-reads inven
 | 11 | Accounting-like builder surface: `Shop::brand()/productInterface()/product()/price()/quote()`, `PriceQuote` DTO, `QuoteService` ✅ |
 | 12 | Generic product `kind` (physical/service/digital/bundle), `extra_attributes` on `Product`, refined `PriceQuote` (`discountAmount`, `*_price` source strings) ✅ |
 | 13 | Squashed schema (`database/migrations_squashed`, legacy retained as reference only), generic `PriceQuote`/snapshot (`itemType`/`itemId`), `products.default_uom_code` ✅ |
+| 14 | Table prefix + configurable table names (`ShopTables`, default `shp_`), `user_wishlists`/`WishList` removed entirely, `product_prices.user_group_id` → `segment_id`, `campaigns.discount_id` → `external_discount_id`, `campaign_type` default → `price_adjustment`, `product_interfaces.category_id` nullable ✅ |
 
 ## 10. What must NOT move into shop
 

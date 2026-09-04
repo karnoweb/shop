@@ -6,21 +6,26 @@ namespace Karnoweb\Shop\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Karnoweb\Shop\Support\ShopTables;
 
 abstract class BaseModel extends Model
 {
     /** @var list<string> */
     protected $guarded = ['id'];
 
+    /**
+     * Resolve the physical table name via {@see ShopTables}, so the
+     * configured prefix (`shop.general.prefix`, default "shp_") and any
+     * exact `shop.tables.<key>` override apply automatically.
+     *
+     * `$this->table`, when set by a subclass, is treated as the unprefixed
+     * base key (e.g. "brands") — never double-prefixed if it already starts
+     * with the current prefix.
+     */
     public function getTable(): string
     {
-        $prefix = (string) config('shop.tables.prefix', '');
-        $table = $this->table ?? str_replace('\\', '', Str::snake(Str::plural(class_basename($this))));
+        $key = $this->table ?? str_replace('\\', '', Str::snake(Str::plural(class_basename($this))));
 
-        if ($prefix !== '' && ! str_starts_with($table, $prefix)) {
-            return $prefix . $table;
-        }
-
-        return $table;
+        return ShopTables::name($key);
     }
 }

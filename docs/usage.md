@@ -17,6 +17,7 @@ sync with the Facade's `@method` annotations.
 
 - [Entry point](#entry-point)
 - [Installation](#installation)
+- [Table prefix & configurable table names](#table-prefix--configurable-table-names)
 - [0 → 100: building a catalog](#0--100-building-a-catalog)
 - [Product kinds (generic business classification)](#product-kinds-generic-business-classification)
 - [Variant modeling: ProductInterface vs Product](#variant-modeling-productinterface-vs-product)
@@ -83,6 +84,44 @@ Builders always resolve the model class through this config, so host
 subclasses are used automatically — nothing in `src/Builders` hardcodes a
 concrete model.
 
+## Table prefix & configurable table names
+
+Same pattern as `karnoweb/laravel-inventory`: every table this package owns
+is resolved through `Karnoweb\Shop\Support\ShopTables::name($key)`, which
+prepends `config('shop.general.prefix')` (env `SHOP_TABLE_PREFIX`, **default
+`"shp_"`**) unless an exact override is configured at
+`config('shop.tables.<key>')` (env `SHOP_TABLE_<KEY>`). This applies
+identically to Eloquent models (via `Karnoweb\Shop\Models\BaseModel`) and to
+the squashed schema migration, so prefix/overrides stay consistent.
+
+**Configure the prefix (or any per-table override) BEFORE running
+`php artisan migrate`** — changing it afterwards does not rename
+already-created tables.
+
+```env
+# .env
+SHOP_TABLE_PREFIX=shp_
+# Optional exact override for a single table, bypassing the prefix:
+SHOP_TABLE_BRANDS=catalog_brands
+```
+
+```php
+use Karnoweb\Shop\Support\ShopTables;
+
+ShopTables::name('products'); // "shp_products" by default
+ShopTables::prefix();         // "shp_"
+```
+
+Table keys available under `shop.tables.*`: `brands`, `attribute_groups`,
+`attributes`, `attribute_values`, `product_interfaces`, `products`,
+`campaigns`, `product_prices`, `category_attribute_group`,
+`attribute_attribute_group`, `product_interface_attributes`,
+`product_interface_attribute_values`, `product_attribute_values`,
+`product_interface_secondary_categories`, `product_interface_complementary`.
+
+To keep pre-13.4 unprefixed table names (e.g. an existing deployment), set
+`SHOP_TABLE_PREFIX=` (empty) before migrating.
+
 ## 0 → 100: building a catalog
 
 The full scenario below uses **only public API** and is exercised end to end
@@ -117,7 +156,7 @@ $product = Shop::product()
 Shop::price()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(null)
+    ->segmentId(null)
     ->amount(1_200_000)
     ->startsAt(now()->subDay())
     ->endsAt(now()->addMonth())
@@ -126,7 +165,7 @@ Shop::price()
 Shop::price()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(7)
+    ->segmentId(7)
     ->amount(1_000_000)
     ->startsAt(now()->subDay())
     ->endsAt(now()->addMonth())
@@ -135,7 +174,7 @@ Shop::price()
 $quote = Shop::quote()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(7)
+    ->segmentId(7)
     ->resolve(); // returns PriceQuote DTO
 
 $snapshot = $quote->toCommerceSnapshot();
@@ -268,7 +307,7 @@ time-windowed price rows, one per `Product` (SKU). Reading happens through
 Shop::price()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(null)
+    ->segmentId(null)
     ->amount(1_200_000)
     ->startsAt(now()->subDay())
     ->endsAt(now()->addMonth())
@@ -277,16 +316,18 @@ Shop::price()
 Shop::price()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(7)
+    ->segmentId(7)
     ->amount(1_000_000)
     ->startsAt(now()->subDay())
     ->endsAt(now()->addMonth())
     ->save();
 ```
 
-**Inputs:** `productId()` (required), `tier()`, `userGroupId()` (null =
-default/group-less row — a **soft host key**, never FK-constrained), `amount()`
-(int|float, >= 0), `startsAt()` / `endsAt()` (`DateTimeInterface|string|null`).
+**Inputs:** `productId()` (required), `tier()`, `segmentId()` (null =
+default/segment-less row — a **soft host key**, persisted on the
+`segment_id` column, never FK-constrained; `userGroupId()` is kept as an
+alias), `amount()` (int|float, >= 0), `startsAt()` / `endsAt()`
+(`DateTimeInterface|string|null`).
 
 **Output:** the created model configured at `shop.models.product_price`.
 
@@ -298,21 +339,21 @@ resolve to an existing row on the model configured at `shop.models.product`.
 
 `Shop::quote()` resolves a **portable, immutable `PriceQuote` DTO** — no
 dependency on `karnoweb/commerce` or any host class, in either direction.
-It accepts `userGroupId`/`tier` **explicitly**; it never assumes a host user
+It accepts `segmentId`/`tier` **explicitly**; it never assumes a host user
 object shape (no `auth()->user()`, no `data_get($user, 'profile...')`).
 
 ```php
 $quote = Shop::quote()
     ->productId($product->id)
     ->tier('retail')
-    ->userGroupId(7)
+    ->segmentId(7)
     ->resolve(); // returns Karnoweb\Shop\DTOs\PriceQuote
 ```
 
 **Inputs:** `productId()` (required, must exist), `tier()` (optional),
-`userGroupId()` (optional). `itemId()` is a generic alias for `productId()`,
-and `itemType()` (default `"shop.product"`) labels *what kind of sellable*
-is being quoted — see below.
+`segmentId()` (optional — `userGroupId()` is kept as an alias). `itemId()` is
+a generic alias for `productId()`, and `itemType()` (default
+`"shop.product"`) labels *what kind of sellable* is being quoted — see below.
 
 **Output — `PriceQuote` fields:**
 
@@ -322,8 +363,8 @@ is being quoted — see below.
 | `itemId` | `int\|null` | Same as `productId` for the current `"shop.product"` item type |
 | `productId` | `int` | Product (SKU) the quote is for — kept alongside `itemId` for backward compatibility |
 | `tier` | `string\|null` | The tier the caller asked for |
-| `userGroupId` | `int\|null` | The soft host user-group key the caller asked for |
-| `basePrice` | `int` | Price resolved by `ProductPriceResolver` for this tier/group — see `source` — before any campaign adjustment |
+| `segmentId` | `int\|null` | The soft host segmentation key the caller asked for (typically a user-group id) |
+| `basePrice` | `int` | Price resolved by `ProductPriceResolver` for this tier/segment — see `source` — before any campaign adjustment |
 | `finalPrice` | `int` | Price after optional campaign adjustment (equals `basePrice` when no adjuster is bound, or none applied) |
 | `hasDiscount` | `bool` | Whether a campaign adjustment changed the price |
 | `discountAmount` | `int` | `basePrice - finalPrice`, always `>= 0` |
@@ -356,7 +397,8 @@ host/commerce layer can depend on:
     'item_id' => 123,
     'product_id' => 123,
     'tier' => 'retail',
-    'user_group_id' => 7,
+    'segment_id' => 7,
+    'user_group_id' => 7, // backward-compatible alias, same value as segment_id
     'base_price' => 1_000_000,
     'final_price' => 1_000_000,
     'has_discount' => false,
@@ -370,12 +412,16 @@ host/commerce layer can depend on:
 
 `item_type`/`item_id` are the minimum stable keys a generic "sellable
 snapshot" consumer should read; `product_id` is kept alongside them for
-existing snapshot consumers. Persist this array as-is in something like
-`commerce.OrderItem.extra_attributes` at the moment of checkout.
-`PriceQuote::fromArray($snapshot)` rebuilds the DTO from a stored snapshot
-when you need to re-inspect it later (e.g. for refunds/audits) — tolerating
-snapshots stored before `item_type`/`item_id`/`uom_code` existed. This
-package never reads or writes commerce tables itself.
+existing snapshot consumers. `segment_id` is the canonical key for the soft
+host segmentation id — prefer it in new code; `user_group_id` is kept
+alongside it (same value) since it was already published. Persist this
+array as-is in something like `commerce.OrderItem.extra_attributes` at the
+moment of checkout. `PriceQuote::fromArray($snapshot)` rebuilds the DTO from
+a stored snapshot when you need to re-inspect it later (e.g. for
+refunds/audits) — tolerating snapshots stored before
+`item_type`/`item_id`/`uom_code`/`segment_id` existed (falling back to the
+legacy `user_group_id` key). This package never reads or writes commerce
+tables itself.
 
 ### QuoteService (without the builder)
 
@@ -386,6 +432,10 @@ product model):
 ```php
 $quote = Shop::quotes()->resolve($product, userGroupId: 7, tier: 'retail');
 ```
+
+(`QuoteService::resolve()`'s `$userGroupId` parameter name is kept as
+documented public API; the resulting `PriceQuote::$segmentId` is the
+canonical property.)
 
 ## Existing pricing API (unchanged)
 

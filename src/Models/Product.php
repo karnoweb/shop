@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Karnoweb\Shop\Support\ShopTables;
 
 /**
  * Lean sellable SKU / variant. Host extends for CMS traits, cache, media helpers.
@@ -66,7 +67,7 @@ class Product extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute', Attribute::class),
-            'product_attribute_values',
+            ShopTables::name('product_attribute_values'),
             'product_id',
             'attribute_id'
         )->withPivot('attribute_value_id');
@@ -76,7 +77,7 @@ class Product extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.attribute_value', AttributeValue::class),
-            'product_attribute_values',
+            ShopTables::name('product_attribute_values'),
             'product_id',
             'attribute_value_id'
         )->withPivot('attribute_id');
@@ -110,7 +111,7 @@ class Product extends BaseModel
     {
         return $this->hasOne(config('shop.models.product_price', ProductPrice::class))
             ->ofMany(
-                ['user_group_id' => 'max', 'starts_at' => 'max'],
+                ['segment_id' => 'max', 'starts_at' => 'max'],
                 function (Builder $query) {
                     $query->active();
                 }
@@ -123,7 +124,7 @@ class Product extends BaseModel
             ->ofMany(
                 ['starts_at' => 'max'],
                 function (Builder $query) {
-                    $query->active()->whereNull('user_group_id');
+                    $query->active()->whereNull('segment_id');
                 }
             );
     }
@@ -134,7 +135,7 @@ class Product extends BaseModel
             ->ofMany(
                 ['starts_at' => 'max'],
                 function (Builder $query) {
-                    $query->active()->whereNotNull('user_group_id');
+                    $query->active()->whereNotNull('segment_id');
                 }
             );
     }

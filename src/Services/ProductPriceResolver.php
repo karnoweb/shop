@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Model;
  * 1. Active price for (product + user_group) — if user has group
  * 2. Active price for (product + null group) — default price
  * 3. Fallback to product.base_price
+ *
+ * `$userGroupId` here is a soft host key persisted on the `segment_id` DB
+ * column (see `database/migrations_squashed`) — the parameter/method names
+ * are kept as documented public API; "segment" is simply the generic name
+ * for the same concept at the schema level.
  */
 class ProductPriceResolver
 {
@@ -68,7 +73,7 @@ class ProductPriceResolver
         if ($userGroupId !== null) {
             $groupPrice = $priceClass::query()
                 ->where('product_id', $product->getKey())
-                ->where('user_group_id', $userGroupId)
+                ->where('segment_id', $userGroupId)
                 ->active()
                 ->latest('starts_at')
                 ->first();
@@ -93,7 +98,7 @@ class ProductPriceResolver
 
         $defaultPrice = $priceClass::query()
             ->where('product_id', $product->getKey())
-            ->whereNull('user_group_id')
+            ->whereNull('segment_id')
             ->active()
             ->latest('starts_at')
             ->first();

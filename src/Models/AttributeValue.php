@@ -6,6 +6,7 @@ namespace Karnoweb\Shop\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
 /**
@@ -45,7 +46,7 @@ class AttributeValue extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.product_interface', ProductInterface::class),
-            'product_interface_attribute_values'
+            ShopTables::name('product_interface_attribute_values')
         )->withPivot('attribute_id');
     }
 
@@ -53,7 +54,7 @@ class AttributeValue extends BaseModel
     {
         return $this->belongsToMany(
             config('shop.models.product', Product::class),
-            'product_attribute_values'
+            ShopTables::name('product_attribute_values')
         )->withPivot('attribute_id');
     }
 }

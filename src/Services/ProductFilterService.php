@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Karnoweb\Shop\Support\ShopTables;
 
 class ProductFilterService
 {
@@ -125,11 +126,13 @@ class ProductFilterService
     public function productCountsPerCategory(array $brandIds = [], array $attributeValueIds = []): array
     {
         $productClass = $this->productModel();
+        $productsTable = (new $productClass)->getTable();
+        $interfacesTable = ShopTables::name('product_interfaces');
 
         $query = $productClass::query()
-            ->where('products.published', $this->publishedEnabled())
-            ->whereNull('products.deleted_at')
-            ->join('product_interfaces as pi', 'products.product_interface_id', '=', 'pi.id')
+            ->where("{$productsTable}.published", $this->publishedEnabled())
+            ->whereNull("{$productsTable}.deleted_at")
+            ->join("{$interfacesTable} as pi", "{$productsTable}.product_interface_id", '=', 'pi.id')
             ->where('pi.published', $this->publishedEnabled())
             ->whereNull('pi.deleted_at');
 
@@ -142,7 +145,7 @@ class ProductFilterService
         }
 
         return $query
-            ->select('pi.category_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
+            ->select('pi.category_id', DB::raw("COUNT(DISTINCT {$productsTable}.id) as cnt"))
             ->groupBy('pi.category_id')
             ->pluck('cnt', 'pi.category_id')
             ->all();
@@ -176,21 +179,24 @@ class ProductFilterService
     public function brandsWithCounts(): Collection
     {
         $brandClass = $this->brandModel();
+        $brandsTable = (new $brandClass)->getTable();
+        $productsTable = (new ($this->productModel()))->getTable();
+        $interfacesTable = ShopTables::name('product_interfaces');
 
         return Cache::remember(
             'pf:brands',
             3600,
             fn () => $brandClass::query()
-                ->where('brands.published', $this->publishedEnabled())
-                ->join('product_interfaces as pi', 'pi.brand_id', '=', 'brands.id')
+                ->where("{$brandsTable}.published", $this->publishedEnabled())
+                ->join("{$interfacesTable} as pi", 'pi.brand_id', '=', "{$brandsTable}.id")
                 ->where('pi.published', $this->publishedEnabled())
                 ->whereNull('pi.deleted_at')
-                ->join('products', 'products.product_interface_id', '=', 'pi.id')
-                ->where('products.published', $this->publishedEnabled())
-                ->whereNull('products.deleted_at')
-                ->select('brands.id', 'brands.slug', DB::raw('COUNT(DISTINCT products.id) as count'))
-                ->groupBy('brands.id', 'brands.slug')
-                ->orderBy('brands.ordering')
+                ->join($productsTable, "{$productsTable}.product_interface_id", '=', 'pi.id')
+                ->where("{$productsTable}.published", $this->publishedEnabled())
+                ->whereNull("{$productsTable}.deleted_at")
+                ->select("{$brandsTable}.id", "{$brandsTable}.slug", DB::raw("COUNT(DISTINCT {$productsTable}.id) as count"))
+                ->groupBy("{$brandsTable}.id", "{$brandsTable}.slug")
+                ->orderBy("{$brandsTable}.ordering")
                 ->having('count', '>', 0)
                 ->get()
                 ->map(fn ($b) => ['id' => $b->id, 'title' => $b->title, 'count' => $b->count])
@@ -218,26 +224,32 @@ class ProductFilterService
 
     public function applyAttributeFilter(Builder $query, array $valueIds): void
     {
+        $attributeValuesTable = (new ($this->attributeValueModel()))->getTable();
+
         foreach ($this->groupValuesByAttribute($valueIds) as $ids) {
             $query->where(
                 fn ($q) => $q
-                    ->whereHas('attributeValues', fn ($av) => $av->whereIn('attribute_values.id', $ids))
-                    ->orWhereHas('productInterface.attributeValues', fn ($av) => $av->whereIn('attribute_values.id', $ids))
+                    ->whereHas('attributeValues', fn ($av) => $av->whereIn("{$attributeValuesTable}.id", $ids))
+                    ->orWhereHas('productInterface.attributeValues', fn ($av) => $av->whereIn("{$attributeValuesTable}.id", $ids))
             );
         }
     }
 
     private function applyAttributeFilterJoined(Builder $query, array $valueIds): void
     {
+        $productsTable = (new ($this->productModel()))->getTable();
+        $pavTable = ShopTables::name('product_attribute_values');
+        $piavTable = ShopTables::name('product_interface_attribute_values');
+
         foreach ($this->groupValuesByAttribute($valueIds) as $ids) {
             $query->where(
                 fn ($q) => $q
                     ->whereExists(fn ($sub) => $sub->select(DB::raw(1))
-                        ->from('product_attribute_values as pav')
-                        ->whereColumn('pav.product_id', 'products.id')
+                        ->from("{$pavTable} as pav")
+                        ->whereColumn('pav.product_id', "{$productsTable}.id")
                         ->whereIn('pav.attribute_value_id', $ids))
                     ->orWhereExists(fn ($sub) => $sub->select(DB::raw(1))
-                        ->from('product_interface_attribute_values as piav')
+                        ->from("{$piavTable} as piav")
                         ->whereColumn('piav.product_interface_id', 'pi.id')
                         ->whereIn('piav.attribute_value_id', $ids))
             );
@@ -291,25 +303,32 @@ class ProductFilterService
      */
     private function attributeIdsForCategories(array $categoryIds): array
     {
-        $fromGroups = DB::table('category_attribute_group')
-            ->join('attribute_attribute_group', 'category_attribute_group.attribute_group_id', '=', 'attribute_attribute_group.attribute_group_id')
-            ->whereIn('category_attribute_group.category_id', $categoryIds)
-            ->select('attribute_attribute_group.attribute_id as attr_id');
+        $categoryAttributeGroupTable = ShopTables::name('category_attribute_group');
+        $attributeAttributeGroupTable = ShopTables::name('attribute_attribute_group');
+        $interfacesTable = ShopTables::name('product_interfaces');
+        $piavTable = ShopTables::name('product_interface_attribute_values');
+        $productsTable = (new ($this->productModel()))->getTable();
+        $pavTable = ShopTables::name('product_attribute_values');
 
-        $fromInterfaceValues = DB::table('product_interfaces')
-            ->join('product_interface_attribute_values', 'product_interfaces.id', '=', 'product_interface_attribute_values.product_interface_id')
-            ->whereIn('product_interfaces.category_id', $categoryIds)
-            ->whereNull('product_interfaces.deleted_at')
-            ->select('product_interface_attribute_values.attribute_id as attr_id');
+        $fromGroups = DB::table("{$categoryAttributeGroupTable} as cag")
+            ->join("{$attributeAttributeGroupTable} as aag", 'cag.attribute_group_id', '=', 'aag.attribute_group_id')
+            ->whereIn('cag.category_id', $categoryIds)
+            ->select('aag.attribute_id as attr_id');
 
-        $fromProductValues = DB::table('products')
-            ->join('product_interfaces', 'products.product_interface_id', '=', 'product_interfaces.id')
-            ->join('product_attribute_values', 'products.id', '=', 'product_attribute_values.product_id')
-            ->where('products.published', $this->publishedEnabled())
-            ->whereNull('products.deleted_at')
-            ->whereNull('product_interfaces.deleted_at')
-            ->whereIn('product_interfaces.category_id', $categoryIds)
-            ->select('product_attribute_values.attribute_id as attr_id');
+        $fromInterfaceValues = DB::table("{$interfacesTable} as pi")
+            ->join("{$piavTable} as piav", 'pi.id', '=', 'piav.product_interface_id')
+            ->whereIn('pi.category_id', $categoryIds)
+            ->whereNull('pi.deleted_at')
+            ->select('piav.attribute_id as attr_id');
+
+        $fromProductValues = DB::table("{$productsTable} as p")
+            ->join("{$interfacesTable} as pi2", 'p.product_interface_id', '=', 'pi2.id')
+            ->join("{$pavTable} as pav", 'p.id', '=', 'pav.product_id')
+            ->where('p.published', $this->publishedEnabled())
+            ->whereNull('p.deleted_at')
+            ->whereNull('pi2.deleted_at')
+            ->whereIn('pi2.category_id', $categoryIds)
+            ->select('pav.attribute_id as attr_id');
 
         return $fromGroups
             ->union($fromInterfaceValues)
@@ -325,8 +344,11 @@ class ProductFilterService
     private function availableValueIds(array $categoryIds, array $attributeIds): array
     {
         $productClass = $this->productModel();
+        $interfacesTable = ShopTables::name('product_interfaces');
+        $piavTable = ShopTables::name('product_interface_attribute_values');
+        $pavTable = ShopTables::name('product_attribute_values');
 
-        $interfaceIdSub = DB::table('product_interfaces')
+        $interfaceIdSub = DB::table($interfacesTable)
             ->whereIn('category_id', $categoryIds)
             ->whereNull('deleted_at')
             ->select('id');
@@ -337,12 +359,12 @@ class ProductFilterService
             ->toBase()
             ->select('id');
 
-        $fromInterfaces = DB::table('product_interface_attribute_values')
+        $fromInterfaces = DB::table($piavTable)
             ->whereIn('product_interface_id', $interfaceIdSub)
             ->whereIn('attribute_id', $attributeIds)
             ->select('attribute_id', 'attribute_value_id');
 
-        $fromProducts = DB::table('product_attribute_values')
+        $fromProducts = DB::table($pavTable)
             ->whereIn('product_id', $productIdSub)
             ->whereIn('attribute_id', $attributeIds)
             ->select('attribute_id', 'attribute_value_id');
@@ -361,11 +383,13 @@ class ProductFilterService
     public function priceRange(?int $userGroupId): array
     {
         $productClass = $this->productModel();
+        $productsTable = (new $productClass)->getTable();
+        $pricesTable = ShopTables::name('product_prices');
         $now = now();
 
         $activeProductSub = $productClass::query()->active()->toBase()->select('id');
 
-        $priceBase = DB::table('product_prices')
+        $priceBase = DB::table($pricesTable)
             ->whereIn('product_id', $activeProductSub)
             ->where(fn ($q) => $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now))
             ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now));
@@ -373,14 +397,14 @@ class ProductFilterService
         $agg = [];
 
         if ($userGroupId !== null) {
-            $g = (clone $priceBase)->where('user_group_id', $userGroupId)
+            $g = (clone $priceBase)->where('segment_id', $userGroupId)
                 ->selectRaw('MIN(price) as lo, MAX(price) as hi')->first();
             if ($g?->lo !== null) {
                 array_push($agg, $g->lo, $g->hi);
             }
         }
 
-        $d = (clone $priceBase)->whereNull('user_group_id')
+        $d = (clone $priceBase)->whereNull('segment_id')
             ->selectRaw('MIN(price) as lo, MAX(price) as hi')->first();
         if ($d?->lo !== null) {
             array_push($agg, $d->lo, $d->hi);
@@ -388,8 +412,8 @@ class ProductFilterService
 
         $withPriceSub = (clone $priceBase)->select('product_id')->distinct();
 
-        $b = DB::table('products')
-            ->where('products.published', $this->publishedEnabled())
+        $b = DB::table($productsTable)
+            ->where('published', $this->publishedEnabled())
             ->whereNull('deleted_at')
             ->whereIn('id', $activeProductSub)
             ->whereNotIn('id', $withPriceSub)

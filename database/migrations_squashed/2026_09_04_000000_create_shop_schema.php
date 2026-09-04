@@ -5,7 +5,10 @@ declare(strict_types=1);
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Karnoweb\Shop\Contracts\StorefrontContext;
+use Karnoweb\Shop\Models\BaseModel;
 use Karnoweb\Shop\ShopServiceProvider;
+use Karnoweb\Shop\Support\ShopTables;
 
 /**
  * Squashed catalog schema — single source of truth for `karnoweb/shop`.
@@ -15,6 +18,13 @@ use Karnoweb\Shop\ShopServiceProvider;
  * Early development, no production data to preserve — this is the final
  * shape of every table in one clean pass.
  *
+ * Every table name is resolved via {@see ShopTables::name()}, so the
+ * configured prefix (`shop.general.prefix`, default "shp_") and any exact
+ * `shop.tables.<key>` override apply here exactly as they do to Eloquent
+ * models (see {@see BaseModel}). Configure the prefix
+ * BEFORE running this migration — changing it afterwards does not rename
+ * already-created tables.
+ *
  * Boundary rules (see SHOP_PACKAGE.md):
  * - Host tables (`users`, `categories`, `user_groups`, ...) are never created
  *   or hard-FK'd here — every cross-boundary reference below is a plain
@@ -22,7 +32,10 @@ use Karnoweb\Shop\ShopServiceProvider;
  * - Other domain packages' tables (`karnoweb/commerce` discounts/orders/...)
  *   are never created or FK'd here either.
  * - Foreign keys are only declared between tables THIS package owns
- *   (brands, product_interfaces, products, attributes, ...).
+ *   (brands, product_interfaces, products, attributes, ...) and always
+ *   resolve their target table through {@see ShopTables::name()} too.
+ * - No `user_wishlists` table — wishlist/cart/compare/rating session state is
+ *   entirely a host concern behind {@see StorefrontContext}.
  */
 return new class extends Migration
 {
@@ -34,7 +47,6 @@ return new class extends Migration
         $this->createProductsTable();
         $this->createCampaignsTable();
         $this->createProductPricesTable();
-        $this->createWishlistsTable();
         $this->createCategoryPivotTables();
         $this->createAttributePivotTables();
         $this->createProductInterfaceRelationTables();
@@ -43,27 +55,26 @@ return new class extends Migration
     public function down(): void
     {
         // Children before parents.
-        Schema::dropIfExists('product_interface_complementary');
-        Schema::dropIfExists('product_interface_secondary_categories');
-        Schema::dropIfExists('product_attribute_values');
-        Schema::dropIfExists('product_interface_attribute_values');
-        Schema::dropIfExists('product_interface_attributes');
-        Schema::dropIfExists('attribute_attribute_group');
-        Schema::dropIfExists('category_attribute_group');
-        Schema::dropIfExists('user_wishlists');
-        Schema::dropIfExists('product_prices');
-        Schema::dropIfExists('campaigns');
-        Schema::dropIfExists('products');
-        Schema::dropIfExists('product_interfaces');
-        Schema::dropIfExists('attribute_values');
-        Schema::dropIfExists('attributes');
-        Schema::dropIfExists('attribute_groups');
-        Schema::dropIfExists('brands');
+        Schema::dropIfExists(ShopTables::name('product_interface_complementary'));
+        Schema::dropIfExists(ShopTables::name('product_interface_secondary_categories'));
+        Schema::dropIfExists(ShopTables::name('product_attribute_values'));
+        Schema::dropIfExists(ShopTables::name('product_interface_attribute_values'));
+        Schema::dropIfExists(ShopTables::name('product_interface_attributes'));
+        Schema::dropIfExists(ShopTables::name('attribute_attribute_group'));
+        Schema::dropIfExists(ShopTables::name('category_attribute_group'));
+        Schema::dropIfExists(ShopTables::name('product_prices'));
+        Schema::dropIfExists(ShopTables::name('campaigns'));
+        Schema::dropIfExists(ShopTables::name('products'));
+        Schema::dropIfExists(ShopTables::name('product_interfaces'));
+        Schema::dropIfExists(ShopTables::name('attribute_values'));
+        Schema::dropIfExists(ShopTables::name('attributes'));
+        Schema::dropIfExists(ShopTables::name('attribute_groups'));
+        Schema::dropIfExists(ShopTables::name('brands'));
     }
 
     private function createBrandsTable(): void
     {
-        Schema::create('brands', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('brands'), function (Blueprint $table): void {
             $table->id();
 
             // Translation: title, description, body (karnoweb/translation).
@@ -83,7 +94,7 @@ return new class extends Migration
 
     private function createAttributeTables(): void
     {
-        Schema::create('attribute_groups', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('attribute_groups'), function (Blueprint $table): void {
             $table->id();
 
             // Translation: title, description.
@@ -91,7 +102,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('attributes', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('attributes'), function (Blueprint $table): void {
             $table->id();
 
             // Translation: title (e.g. "Color", "Size").
@@ -104,12 +115,12 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('attribute_values', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('attribute_values'), function (Blueprint $table): void {
             $table->id();
 
             // Translation: title (e.g. "Red", "42").
             $table->text('languages')->nullable();
-            $table->foreignId('attribute_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('attribute_id')->constrained(ShopTables::name('attributes'), 'id', 'fk_av_attribute')->cascadeOnDelete();
             $table->unsignedInteger('order')->default(1);
             $table->timestamps();
         });
@@ -117,12 +128,14 @@ return new class extends Migration
 
     private function createProductInterfacesTable(): void
     {
-        Schema::create('product_interfaces', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('product_interfaces'), function (Blueprint $table): void {
             $table->id();
             $table->string('slug')->unique();
 
-            // Soft host key — `categories` is owned by the host CMS.
-            $table->unsignedBigInteger('category_id')->index();
+            // Soft host key — `categories` is owned by the host CMS. Nullable
+            // + indexed so this package stays standalone-friendly even when
+            // no host category system is wired up yet.
+            $table->unsignedBigInteger('category_id')->nullable()->index();
 
             // Variant/configuration shape: simple|codding|digital|service.
             $table->string('type')->default('simple');
@@ -132,7 +145,7 @@ return new class extends Migration
             // and never used to gate stock/availability (see ProductKindEnum).
             $table->string('kind')->default('physical')->index();
 
-            $table->foreignId('brand_id')->nullable()->constrained('brands')->nullOnDelete();
+            $table->foreignId('brand_id')->nullable()->constrained(ShopTables::name('brands'), 'id', 'fk_pi_brand')->nullOnDelete();
             $table->unsignedInteger('warning_quantity')->nullable();
             $table->unsignedInteger('max_discount_percent')->nullable();
             $table->timestamp('ladder_at')->nullable();
@@ -160,9 +173,9 @@ return new class extends Migration
 
     private function createProductsTable(): void
     {
-        Schema::create('products', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('products'), function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('product_interface_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('product_interface_id')->constrained(ShopTables::name('product_interfaces'), 'id', 'fk_p_interface')->cascadeOnDelete();
             $table->boolean('is_main')->default(false)->index();
             $table->string('sku')->nullable()->index();
 
@@ -199,15 +212,19 @@ return new class extends Migration
 
     private function createCampaignsTable(): void
     {
-        // `discount_id` and `created_by` are soft keys: commerce (discounts) and
-        // the host (users) are separate bounded contexts, so this package never
-        // adds hard FKs to their tables.
-        Schema::create('campaigns', function (Blueprint $table): void {
+        // `external_discount_id` and `created_by` are soft keys: commerce
+        // (discounts) and the host (users) are separate bounded contexts, so
+        // this package never adds hard FKs to their tables. `campaign_type`
+        // defaults to "price_adjustment" (catalog/pricing-scoped) rather than
+        // an order-lifecycle type — this package never models order-based
+        // campaign behavior; evaluating whether a campaign applies to an
+        // order is entirely the host's `CampaignPriceAdjuster` bridge.
+        Schema::create(ShopTables::name('campaigns'), function (Blueprint $table): void {
             $table->id();
             $table->string('title');
             $table->text('description')->nullable();
-            $table->unsignedBigInteger('discount_id')->nullable()->index();
-            $table->string('campaign_type')->default('order_based')->comment('Campaign type: product_based or order_based');
+            $table->unsignedBigInteger('external_discount_id')->nullable()->index();
+            $table->string('campaign_type')->default('price_adjustment')->comment('Campaign type: product_based, order_based (legacy), or price_adjustment');
             $table->json('conditions')->nullable()->comment('Campaign filter conditions');
             $table->string('condition_logic')->default('and')->comment('Logic for conditions: and/or');
             $table->integer('priority')->default(0)->comment('Higher priority campaigns are evaluated first');
@@ -229,14 +246,17 @@ return new class extends Migration
 
     private function createProductPricesTable(): void
     {
-        Schema::create('product_prices', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('product_prices'), function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('product_id')->constrained(ShopTables::name('products'), 'id', 'fk_pp_product')->cascadeOnDelete();
 
-            // Soft host key — `user_groups` is owned by the host.
-            $table->unsignedBigInteger('user_group_id')->nullable()->index();
+            // Soft host key — generic segmentation (typically a user group),
+            // owned by the host. Renamed from `user_group_id` to the generic
+            // `segment_id`; `ProductPriceBuilder::userGroupId()` /
+            // `QuoteBuilder::userGroupId()` remain as aliases.
+            $table->unsignedBigInteger('segment_id')->nullable()->index();
 
-            // Portable price tier (e.g. "retail", "wholesale"); independent from user_group_id.
+            // Portable price tier (e.g. "retail", "wholesale"); independent from segment_id.
             $table->string('tier')->nullable();
 
             $table->decimal('price', 15, 0)->unsigned();
@@ -244,30 +264,18 @@ return new class extends Migration
             $table->timestamp('ends_at')->nullable();
             $table->timestamps();
 
-            $table->index(['product_id', 'user_group_id']);
+            $table->index(['product_id', 'segment_id']);
             $table->index(['product_id', 'tier']);
             $table->index(['starts_at', 'ends_at']);
-        });
-    }
-
-    private function createWishlistsTable(): void
-    {
-        Schema::create('user_wishlists', function (Blueprint $table): void {
-            $table->id();
-
-            // Soft host key — `users` is owned by the host.
-            $table->unsignedBigInteger('user_id')->index();
-            $table->morphs('morphable');
-            $table->timestamps();
         });
     }
 
     private function createCategoryPivotTables(): void
     {
         // Soft host key — `categories` is owned by the host; `attribute_groups` is owned here.
-        Schema::create('category_attribute_group', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('category_attribute_group'), function (Blueprint $table): void {
             $table->unsignedBigInteger('category_id')->index();
-            $table->foreignId('attribute_group_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('attribute_group_id')->constrained(ShopTables::name('attribute_groups'), 'id', 'fk_cag_group')->cascadeOnDelete();
 
             $table->unique(['category_id', 'attribute_group_id'], 'category_attribute_group_unique');
         });
@@ -276,9 +284,9 @@ return new class extends Migration
     private function createAttributePivotTables(): void
     {
         // Links attributes to attribute groups (e.g. "Screen Size" -> "Mobile Phone").
-        Schema::create('attribute_attribute_group', function (Blueprint $table): void {
-            $table->foreignId('attribute_group_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_id')->constrained()->cascadeOnDelete();
+        Schema::create(ShopTables::name('attribute_attribute_group'), function (Blueprint $table): void {
+            $table->foreignId('attribute_group_id')->constrained(ShopTables::name('attribute_groups'), 'id', 'fk_aag_group')->cascadeOnDelete();
+            $table->foreignId('attribute_id')->constrained(ShopTables::name('attributes'), 'id', 'fk_aag_attribute')->cascadeOnDelete();
 
             $table->unique(['attribute_group_id', 'attribute_id'], 'attribute_attribute_group_unique');
         });
@@ -286,20 +294,25 @@ return new class extends Migration
 
     private function createProductInterfaceRelationTables(): void
     {
+        $productInterfacesTable = ShopTables::name('product_interfaces');
+        $attributesTable = ShopTables::name('attributes');
+        $attributeValuesTable = ShopTables::name('attribute_values');
+        $productsTable = ShopTables::name('products');
+
         // Links product interfaces to attributes (optionally as variant/"codding" axes).
-        Schema::create('product_interface_attributes', function (Blueprint $table): void {
-            $table->foreignId('product_interface_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_id')->constrained()->cascadeOnDelete();
+        Schema::create(ShopTables::name('product_interface_attributes'), function (Blueprint $table) use ($productInterfacesTable, $attributesTable): void {
+            $table->foreignId('product_interface_id')->constrained($productInterfacesTable, 'id', 'fk_pia_interface')->cascadeOnDelete();
+            $table->foreignId('attribute_id')->constrained($attributesTable, 'id', 'fk_pia_attribute')->cascadeOnDelete();
             $table->boolean('codding')->default(false);
 
             $table->unique(['product_interface_id', 'attribute_id'], 'product_interface_attribute_unique');
         });
 
         // Links product interfaces to shared (non-variant) attribute values.
-        Schema::create('product_interface_attribute_values', function (Blueprint $table): void {
-            $table->foreignId('product_interface_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_value_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_id')->constrained()->cascadeOnDelete();
+        Schema::create(ShopTables::name('product_interface_attribute_values'), function (Blueprint $table) use ($productInterfacesTable, $attributesTable, $attributeValuesTable): void {
+            $table->foreignId('product_interface_id')->constrained($productInterfacesTable, 'id', 'fk_piav_interface')->cascadeOnDelete();
+            $table->foreignId('attribute_value_id')->constrained($attributeValuesTable, 'id', 'fk_piav_value')->cascadeOnDelete();
+            $table->foreignId('attribute_id')->constrained($attributesTable, 'id', 'fk_piav_attribute')->cascadeOnDelete();
 
             $table->unique(
                 ['product_interface_id', 'attribute_value_id', 'attribute_id'],
@@ -314,10 +327,10 @@ return new class extends Migration
         });
 
         // Links product variants/SKUs to their specific attribute values.
-        Schema::create('product_attribute_values', function (Blueprint $table): void {
-            $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_value_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('attribute_id')->constrained()->cascadeOnDelete();
+        Schema::create(ShopTables::name('product_attribute_values'), function (Blueprint $table) use ($productsTable, $attributesTable, $attributeValuesTable): void {
+            $table->foreignId('product_id')->constrained($productsTable, 'id', 'fk_pav_product')->cascadeOnDelete();
+            $table->foreignId('attribute_value_id')->constrained($attributeValuesTable, 'id', 'fk_pav_value')->cascadeOnDelete();
+            $table->foreignId('attribute_id')->constrained($attributesTable, 'id', 'fk_pav_attribute')->cascadeOnDelete();
 
             $table->unique(
                 ['product_id', 'attribute_value_id', 'attribute_id'],
@@ -331,7 +344,7 @@ return new class extends Migration
             );
         });
 
-        Schema::create('product_interface_secondary_categories', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('product_interface_secondary_categories'), function (Blueprint $table) use ($productInterfacesTable): void {
             $table->unsignedBigInteger('product_interface_id');
 
             // Soft host key — `categories` is owned by the host CMS.
@@ -339,26 +352,26 @@ return new class extends Migration
 
             $table->foreign('product_interface_id', 'pi_sec_cat_pi_fk')
                 ->references('id')
-                ->on('product_interfaces')
+                ->on($productInterfacesTable)
                 ->cascadeOnDelete();
 
             $table->unique(['product_interface_id', 'category_id'], 'pi_secondary_categories_unique');
         });
 
-        Schema::create('product_interface_complementary', function (Blueprint $table): void {
+        Schema::create(ShopTables::name('product_interface_complementary'), function (Blueprint $table) use ($productInterfacesTable): void {
             $table->unsignedBigInteger('product_interface_id');
             $table->unsignedBigInteger('complementary_id');
 
             $table->primary(['product_interface_id', 'complementary_id']);
 
-            $table->foreign('product_interface_id')
+            $table->foreign('product_interface_id', 'fk_pic_interface')
                 ->references('id')
-                ->on('product_interfaces')
+                ->on($productInterfacesTable)
                 ->cascadeOnDelete();
 
-            $table->foreign('complementary_id')
+            $table->foreign('complementary_id', 'fk_pic_complementary')
                 ->references('id')
-                ->on('product_interfaces')
+                ->on($productInterfacesTable)
                 ->cascadeOnDelete();
         });
     }

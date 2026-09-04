@@ -25,7 +25,7 @@ class Campaign extends BaseModel
     protected $fillable = [
         'title',
         'description',
-        'discount_id',
+        'external_discount_id',
         'campaign_type',
         'conditions',
         'condition_logic',
@@ -55,11 +55,22 @@ class Campaign extends BaseModel
     }
 
     /**
-     * Soft commerce discount relation (config, no hard package dep).
+     * Soft, config-resolved discount relation — `external_discount_id` is a
+     * soft key on purpose (never FK-constrained): the discount concept it
+     * points at is owned by the host or `karnoweb/commerce`, never by this
+     * package.
+     */
+    public function externalDiscount(): BelongsTo
+    {
+        return $this->belongsTo(config('shop.models.discount'), 'external_discount_id');
+    }
+
+    /**
+     * @deprecated Alias for {@see self::externalDiscount()} — kept for backward compatibility.
      */
     public function discount(): BelongsTo
     {
-        return $this->belongsTo(config('shop.models.discount'));
+        return $this->externalDiscount();
     }
 
     /**

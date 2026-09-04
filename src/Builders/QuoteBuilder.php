@@ -29,7 +29,7 @@ class QuoteBuilder
 
     private ?string $tier = null;
 
-    private ?int $userGroupId = null;
+    private ?int $segmentId = null;
 
     public function __construct(
         private readonly QuoteService $quoteService
@@ -75,12 +75,20 @@ class QuoteBuilder
         return $this;
     }
 
-    /** Set the soft host user-group key. */
-    public function userGroupId(?int $userGroupId): self
+    /** Set the soft host segment key (e.g. a user-group id). */
+    public function segmentId(?int $segmentId): self
     {
-        $this->userGroupId = $userGroupId;
+        $this->segmentId = $segmentId;
 
         return $this;
+    }
+
+    /**
+     * @deprecated Alias for {@see self::segmentId()} — kept for backward compatibility.
+     */
+    public function userGroupId(?int $userGroupId): self
+    {
+        return $this->segmentId($userGroupId);
     }
 
     /**
@@ -101,6 +109,6 @@ class QuoteBuilder
             throw new ProductNotFoundException($this->productId);
         }
 
-        return $this->quoteService->resolve($product, $this->userGroupId, $this->tier, $this->itemType);
+        return $this->quoteService->resolve($product, $this->segmentId, $this->tier, $this->itemType);
     }
 }

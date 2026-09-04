@@ -7,6 +7,7 @@ namespace Karnoweb\Shop\Tests\Feature;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Karnoweb\Shop\ShopServiceProvider;
+use Karnoweb\Shop\Support\ShopTables;
 use Karnoweb\Shop\Tests\TestCase;
 
 /**
@@ -21,6 +22,17 @@ use Karnoweb\Shop\Tests\TestCase;
  */
 final class MigrationsInstallStandaloneTest extends TestCase
 {
+    private const BASE_TABLE_KEYS = [
+        'brands',
+        'attribute_groups',
+        'attributes',
+        'attribute_values',
+        'product_interfaces',
+        'products',
+        'campaigns',
+        'product_prices',
+    ];
+
     public function test_only_one_schema_migration_is_loaded(): void
     {
         $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
@@ -45,23 +57,22 @@ final class MigrationsInstallStandaloneTest extends TestCase
     {
         $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
 
-        foreach ([
-            'brands',
-            'attribute_groups',
-            'attributes',
-            'attribute_values',
-            'product_interfaces',
-            'products',
-            'campaigns',
-            'product_prices',
-            'user_wishlists',
-        ] as $table) {
+        foreach (self::BASE_TABLE_KEYS as $table) {
             $this->assertTrue(Schema::hasTable($table), "Expected table [{$table}] to exist after migrate.");
         }
 
+        // Removed entirely — wishlist/cart/compare/rating session state is a
+        // host concern behind StorefrontContext, not a package-owned table.
+        $this->assertFalse(Schema::hasTable('user_wishlists'), 'user_wishlists must not be created by this package.');
+
         $this->assertTrue(Schema::hasColumns('product_interfaces', ['kind', 'extra_attributes']));
+        $this->assertTrue(Schema::hasColumn('product_interfaces', 'category_id'));
         $this->assertTrue(Schema::hasColumns('products', ['extra_attributes', 'default_uom_code']));
         $this->assertTrue(Schema::hasColumn('brands', 'extra_attributes'));
+        $this->assertTrue(Schema::hasColumn('product_prices', 'segment_id'));
+        $this->assertFalse(Schema::hasColumn('product_prices', 'user_group_id'), 'user_group_id was renamed to segment_id.');
+        $this->assertTrue(Schema::hasColumn('campaigns', 'external_discount_id'));
+        $this->assertFalse(Schema::hasColumn('campaigns', 'discount_id'), 'discount_id was renamed to external_discount_id.');
 
         // Never provided by this package — proves no hard dependency was created on them.
         foreach (['users', 'categories', 'user_groups', 'discounts', 'orders', 'order_items'] as $foreignTable) {
@@ -74,18 +85,59 @@ final class MigrationsInstallStandaloneTest extends TestCase
         $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
         $this->artisan('migrate:rollback', ['--force' => true])->assertExitCode(0);
 
-        foreach ([
-            'brands',
-            'attribute_groups',
-            'attributes',
-            'attribute_values',
-            'product_interfaces',
-            'products',
-            'campaigns',
-            'product_prices',
-            'user_wishlists',
-        ] as $table) {
+        foreach (self::BASE_TABLE_KEYS as $table) {
             $this->assertFalse(Schema::hasTable($table), "Expected table [{$table}] to be dropped after rollback.");
         }
+    }
+
+    public function test_migrate_uses_default_shp_prefix_when_not_overridden(): void
+    {
+        // TestCase forces an empty prefix for the rest of the suite's
+        // convenience; this test restores the package's real default to
+        // prove it is actually "shp_" out of the box.
+        config(['shop.general.prefix' => 'shp_']);
+
+        $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
+
+        foreach (self::BASE_TABLE_KEYS as $key) {
+            $this->assertTrue(
+                Schema::hasTable("shp_{$key}"),
+                "Expected prefixed table [shp_{$key}] to exist after migrate with the default prefix."
+            );
+            $this->assertFalse(
+                Schema::hasTable($key),
+                "Unprefixed table [{$key}] should not exist when the default prefix is active."
+            );
+        }
+
+        $this->assertSame('shp_products', ShopTables::name('products'));
+    }
+
+    public function test_migrate_and_rollback_use_a_custom_configured_prefix(): void
+    {
+        config(['shop.general.prefix' => 'acme_']);
+
+        $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
+
+        foreach (self::BASE_TABLE_KEYS as $key) {
+            $this->assertTrue(Schema::hasTable("acme_{$key}"), "Expected custom-prefixed table [acme_{$key}] to exist.");
+        }
+
+        $this->artisan('migrate:rollback', ['--force' => true])->assertExitCode(0);
+
+        foreach (self::BASE_TABLE_KEYS as $key) {
+            $this->assertFalse(Schema::hasTable("acme_{$key}"), "Expected custom-prefixed table [acme_{$key}] to be dropped after rollback.");
+        }
+    }
+
+    public function test_migrate_uses_an_exact_table_name_override(): void
+    {
+        config(['shop.tables.brands' => 'catalog_brands']);
+
+        $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
+
+        $this->assertTrue(Schema::hasTable('catalog_brands'));
+        $this->assertFalse(Schema::hasTable('brands'));
+        $this->assertFalse(Schema::hasTable('shp_brands'));
     }
 }

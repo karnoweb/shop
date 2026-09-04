@@ -125,7 +125,7 @@ final class BuilderApiTest extends TestCase
         $this->assertNull($quote->discountPercent);
         $this->assertNull($quote->campaignId);
         $this->assertSame('user_group_price', $quote->source);
-        $this->assertSame(7, $quote->userGroupId);
+        $this->assertSame(7, $quote->segmentId);
         $this->assertSame('retail', $quote->tier);
 
         $snapshot = $quote->toCommerceSnapshot();
@@ -134,6 +134,7 @@ final class BuilderApiTest extends TestCase
             'item_id' => $product->id,
             'product_id' => $product->id,
             'tier' => 'retail',
+            'segment_id' => 7,
             'user_group_id' => 7,
             'base_price' => 1000000,
             'final_price' => 1000000,
@@ -191,6 +192,27 @@ final class BuilderApiTest extends TestCase
         $this->assertSame('shop.product', $quote->itemType);
         $this->assertSame($product->id, $quote->itemId);
         $this->assertSame('kg', $quote->toCommerceSnapshot()['uom_code']);
+    }
+
+    public function test_price_and_quote_builders_accept_canonical_segment_id(): void
+    {
+        $product = $this->createBaseProduct();
+
+        ShopFacade::price()
+            ->productId($product->id)
+            ->segmentId(9)
+            ->amount(1_500_000)
+            ->save();
+
+        $quote = ShopFacade::quote()
+            ->productId($product->id)
+            ->segmentId(9)
+            ->resolve();
+
+        $this->assertSame(9, $quote->segmentId);
+        $this->assertSame(1500000, $quote->basePrice);
+        $this->assertSame('user_group_price', $quote->source);
+        $this->assertSame(9, $quote->toCommerceSnapshot()['segment_id']);
     }
 
     public function test_quote_falls_back_to_default_price_for_unknown_user_group(): void

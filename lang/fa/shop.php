@@ -30,6 +30,7 @@ return [
         'type' => [
             'product_based' => 'مبتنی بر محصول',
             'order_based' => 'مبتنی بر سفارش',
+            'price_adjustment' => 'تعدیل قیمت',
         ],
         'condition' => [
             'category' => 'دسته‌بندی',

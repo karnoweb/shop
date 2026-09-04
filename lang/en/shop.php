@@ -30,6 +30,7 @@ return [
         'type' => [
             'product_based' => 'Product-based',
             'order_based' => 'Order-based',
+            'price_adjustment' => 'Price adjustment',
         ],
         'condition' => [
             'category' => 'Category',
