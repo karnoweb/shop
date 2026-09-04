@@ -17,16 +17,52 @@ use Illuminate\Database\Eloquent\Model;
 class ProductPriceResolver
 {
     /**
-     * @param Model       $product Product model instance
-     * @param object|null $user    User with optional profile->user_group_id
-     * @param string|null $tier    Optional portable price tier (e.g. retail, wholesale)
+     * Backward-compatible adapter over {@see self::resolveForUserGroupId()}.
+     *
+     * @param  Model  $product  Product model instance
+     * @param  object|null  $user  User with optional profile->user_group_id
+     * @param  string|null  $tier  Optional portable price tier (e.g. retail, wholesale)
      */
     public function resolve(Model $product, ?object $user = null, ?string $tier = null): int
     {
+        $userGroupId = data_get($user, 'profile.user_group_id');
+
+        return $this->resolveForUserGroupId(
+            $product,
+            $userGroupId !== null ? (int) $userGroupId : null,
+            $tier
+        );
+    }
+
+    /**
+     * Same resolve order as {@see self::resolve()}, but takes an explicit
+     * user group id instead of a user object — no `auth()`/`data_get($user, ...)`
+     * assumption, so callers (e.g. {@see QuoteService})
+     * can resolve prices without a host user model.
+     *
+     * @param  Model  $product  Product model instance
+     * @param  int|null  $userGroupId  Soft host user-group key, or null
+     * @param  string|null  $tier  Optional portable price tier (e.g. retail, wholesale)
+     */
+    public function resolveForUserGroupId(Model $product, ?int $userGroupId, ?string $tier = null): int
+    {
+        return $this->resolveDetailedForUserGroupId($product, $userGroupId, $tier)['price'];
+    }
+
+    /**
+     * Same resolve order as {@see self::resolveForUserGroupId()}, but also
+     * reports which strategy matched — useful for quote/audit surfaces that
+     * need to explain where a price came from.
+     *
+     * @param  Model  $product  Product model instance
+     * @param  int|null  $userGroupId  Soft host user-group key, or null
+     * @param  string|null  $tier  Optional portable price tier (e.g. retail, wholesale)
+     * @return array{price: int, source: string} source is one of: user_group|tier|default|base_price
+     */
+    public function resolveDetailedForUserGroupId(Model $product, ?int $userGroupId, ?string $tier = null): array
+    {
         /** @var class-string<Model> $priceClass */
         $priceClass = config('shop.models.product_price');
-
-        $userGroupId = data_get($user, 'profile.user_group_id');
 
         if ($userGroupId !== null) {
             $groupPrice = $priceClass::query()
@@ -37,7 +73,7 @@ class ProductPriceResolver
                 ->first();
 
             if ($groupPrice) {
-                return (int) $groupPrice->price;
+                return ['price' => (int) $groupPrice->price, 'source' => 'user_group'];
             }
         }
 
@@ -50,7 +86,7 @@ class ProductPriceResolver
                 ->first();
 
             if ($tierPrice) {
-                return (int) $tierPrice->price;
+                return ['price' => (int) $tierPrice->price, 'source' => 'tier'];
             }
         }
 
@@ -62,9 +98,9 @@ class ProductPriceResolver
             ->first();
 
         if ($defaultPrice) {
-            return (int) $defaultPrice->price;
+            return ['price' => (int) $defaultPrice->price, 'source' => 'default'];
         }
 
-        return (int) $product->getAttribute('base_price');
+        return ['price' => (int) $product->getAttribute('base_price'), 'source' => 'base_price'];
     }
 }

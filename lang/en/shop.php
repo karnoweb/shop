@@ -37,4 +37,9 @@ return [
             'date_range' => 'Date range',
         ],
     ],
+    'exceptions' => [
+        'invalid_price_window' => 'Price window is invalid: starts_at must be before or equal to ends_at.',
+        'invalid_price_amount' => 'Price amount must be zero or greater.',
+        'product_not_found' => 'Product [:id] was not found.',
+    ],
 ];

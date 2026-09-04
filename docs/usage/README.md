@@ -13,5 +13,6 @@ use Karnoweb\Shop\Facades\Shop;
 | قیمت | [pricing.md](pricing.md) |
 | فیلتر و facet | [filters.md](filters.md) |
 | اتصال به اپ میزبان | [host-integration.md](host-integration.md) |
+| Builders و Quote (فلوئنت، انگلیسی) | [builders.md](builders.md) |
 
 مفاهیم دامنه: [../concepts/README.md](../concepts/README.md).

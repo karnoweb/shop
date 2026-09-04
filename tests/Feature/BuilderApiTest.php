@@ -1,0 +1,252 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Karnoweb\Shop\Tests\Feature;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Karnoweb\Shop\DTOs\PriceQuote;
+use Karnoweb\Shop\Exceptions\InvalidPriceAmountException;
+use Karnoweb\Shop\Exceptions\InvalidPriceWindowException;
+use Karnoweb\Shop\Exceptions\ProductNotFoundException;
+use Karnoweb\Shop\Facades\Shop as ShopFacade;
+use Karnoweb\Shop\Models\Brand;
+use Karnoweb\Shop\Models\Product;
+use Karnoweb\Shop\Models\ProductInterface;
+use Karnoweb\Shop\Models\ProductPrice;
+use Karnoweb\Shop\Services\ProductPriceResolver;
+use Karnoweb\Shop\Tests\TestCase;
+
+/**
+ * Exercises the new Accounting-like builder/quote surface end to end:
+ * Brand -> ProductInterface -> Product -> ProductPrice -> PriceQuote.
+ */
+final class BuilderApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
+    }
+
+    protected function defineEnvironment($app): void
+    {
+        parent::defineEnvironment($app);
+
+        // Builders resolve models via config('shop.models.*'); standalone tests
+        // have no App\Models\* host subclasses, so point config at the package's
+        // own lean models instead (mirrors how a host would point it at its subclasses).
+        $app['config']->set('shop.models.brand', Brand::class);
+        $app['config']->set('shop.models.product_interface', ProductInterface::class);
+        $app['config']->set('shop.models.product', Product::class);
+        $app['config']->set('shop.models.product_price', ProductPrice::class);
+    }
+
+    public function test_full_builder_flow_creates_catalog_records(): void
+    {
+        $brand = ShopFacade::brand()
+            ->slug('acme')
+            ->published(true)
+            ->create();
+
+        $this->assertSame('acme', $brand->slug);
+        $this->assertTrue($brand->published);
+
+        $productInterface = ShopFacade::productInterface()
+            ->slug('coffee-beans-1kg')
+            ->type('simple')
+            ->brandId($brand->id)
+            ->categoryId(10)
+            ->published(true)
+            ->create();
+
+        $this->assertSame('coffee-beans-1kg', $productInterface->slug);
+        $this->assertSame($brand->id, $productInterface->brand_id);
+        $this->assertSame(10, $productInterface->category_id);
+
+        $product = ShopFacade::product()
+            ->productInterfaceId($productInterface->id)
+            ->sku('COF-1KG')
+            ->basePrice(1_200_000)
+            ->published(true)
+            ->isMain(true)
+            ->create();
+
+        $this->assertSame('COF-1KG', $product->sku);
+        $this->assertSame(1200000, (int) $product->base_price);
+        $this->assertTrue($product->is_main);
+        $this->assertSame($productInterface->id, $product->product_interface_id);
+    }
+
+    public function test_quote_resolves_user_group_price_over_default_price(): void
+    {
+        [$product] = $this->createProductWithTwoPrices();
+
+        $quote = ShopFacade::quote()
+            ->productId($product->id)
+            ->tier('retail')
+            ->userGroupId(7)
+            ->resolve();
+
+        $this->assertInstanceOf(PriceQuote::class, $quote);
+        $this->assertSame($product->id, $quote->productId);
+        $this->assertSame(1000000, $quote->unitPrice);
+        $this->assertSame(1200000, $quote->basePrice);
+        $this->assertSame(1000000, $quote->finalPrice);
+        $this->assertFalse($quote->hasDiscount);
+        $this->assertSame('user_group', $quote->source);
+        $this->assertSame(7, $quote->userGroupId);
+        $this->assertSame('retail', $quote->tier);
+
+        $snapshot = $quote->toCommerceSnapshot();
+        $this->assertSame([
+            'product_id' => $product->id,
+            'unit_price' => 1000000,
+            'base_price' => 1200000,
+            'final_price' => 1000000,
+            'has_discount' => false,
+            'discount_percent' => null,
+            'campaign_id' => null,
+            'tier' => 'retail',
+            'user_group_id' => 7,
+            'source' => 'user_group',
+        ], $snapshot);
+
+        $rebuilt = PriceQuote::fromArray($snapshot);
+        $this->assertEquals($quote, $rebuilt);
+    }
+
+    public function test_quote_falls_back_to_default_price_for_unknown_user_group(): void
+    {
+        [$product] = $this->createProductWithTwoPrices();
+
+        $quote = ShopFacade::quote()
+            ->productId($product->id)
+            ->userGroupId(999)
+            ->resolve();
+
+        // No price row for group 999, and no tier requested -> falls through to the default (group-less) price row.
+        $this->assertSame(1200000, $quote->unitPrice);
+        $this->assertSame('default', $quote->source);
+    }
+
+    public function test_resolve_for_user_group_id_works_directly(): void
+    {
+        [$product] = $this->createProductWithTwoPrices();
+
+        $resolver = new ProductPriceResolver;
+
+        $this->assertSame(1000000, $resolver->resolveForUserGroupId($product, 7));
+        $this->assertSame(1200000, $resolver->resolveForUserGroupId($product, null));
+    }
+
+    public function test_legacy_resolve_with_user_object_still_works(): void
+    {
+        [$product] = $this->createProductWithTwoPrices();
+
+        $resolver = new ProductPriceResolver;
+
+        $userInGroup = (object) ['profile' => (object) ['user_group_id' => 7]];
+        $userWithoutGroup = (object) ['profile' => (object) ['user_group_id' => null]];
+
+        $this->assertSame(1000000, $resolver->resolve($product, $userInGroup));
+        $this->assertSame(1200000, $resolver->resolve($product, $userWithoutGroup));
+        $this->assertSame(1200000, $resolver->resolve($product, null));
+    }
+
+    public function test_price_builder_rejects_negative_amount(): void
+    {
+        $product = $this->createBaseProduct();
+
+        $this->expectException(InvalidPriceAmountException::class);
+
+        ShopFacade::price()
+            ->productId($product->id)
+            ->amount(-1)
+            ->save();
+    }
+
+    public function test_price_builder_rejects_inverted_window(): void
+    {
+        $product = $this->createBaseProduct();
+
+        $this->expectException(InvalidPriceWindowException::class);
+
+        ShopFacade::price()
+            ->productId($product->id)
+            ->amount(1000)
+            ->startsAt(now())
+            ->endsAt(now()->subDay())
+            ->save();
+    }
+
+    public function test_price_builder_rejects_unknown_product(): void
+    {
+        $this->expectException(ProductNotFoundException::class);
+
+        ShopFacade::price()
+            ->productId(999999)
+            ->amount(1000)
+            ->save();
+    }
+
+    public function test_quote_builder_rejects_unknown_product(): void
+    {
+        $this->expectException(ProductNotFoundException::class);
+
+        ShopFacade::quote()
+            ->productId(999999)
+            ->resolve();
+    }
+
+    /**
+     * @return array{0: Model}
+     */
+    private function createProductWithTwoPrices(): array
+    {
+        $product = $this->createBaseProduct();
+
+        ShopFacade::price()
+            ->productId($product->id)
+            ->tier('retail')
+            ->userGroupId(null)
+            ->amount(1_200_000)
+            ->startsAt(now()->subDay())
+            ->endsAt(now()->addMonth())
+            ->save();
+
+        ShopFacade::price()
+            ->productId($product->id)
+            ->tier('retail')
+            ->userGroupId(7)
+            ->amount(1_000_000)
+            ->startsAt(now()->subDay())
+            ->endsAt(now()->addMonth())
+            ->save();
+
+        return [$product];
+    }
+
+    private function createBaseProduct(): Model
+    {
+        $brand = ShopFacade::brand()->slug('acme-'.uniqid())->published(true)->create();
+
+        $productInterface = ShopFacade::productInterface()
+            ->slug('coffee-beans-'.uniqid())
+            ->type('simple')
+            ->brandId($brand->id)
+            ->categoryId(10)
+            ->published(true)
+            ->create();
+
+        return ShopFacade::product()
+            ->productInterfaceId($productInterface->id)
+            ->sku('COF-'.uniqid())
+            ->basePrice(1_200_000)
+            ->published(true)
+            ->isMain(true)
+            ->create();
+    }
+}

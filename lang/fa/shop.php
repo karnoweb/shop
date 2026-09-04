@@ -37,4 +37,9 @@ return [
             'date_range' => 'بازه زمانی',
         ],
     ],
+    'exceptions' => [
+        'invalid_price_window' => 'بازهٔ قیمت نامعتبر است: starts_at باید قبل یا برابر ends_at باشد.',
+        'invalid_price_amount' => 'مقدار قیمت باید صفر یا بیشتر باشد.',
+        'product_not_found' => 'محصول [:id] یافت نشد.',
+    ],
 ];
