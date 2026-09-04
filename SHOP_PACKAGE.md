@@ -81,8 +81,8 @@ Mirrors CRM pattern with **Macroable** extension:
 - `Shop::config('…')` → shop config
 - `Shop::model('product')` → configured model class (single resolution path for relations)
 - `Shop::macro('featuredSkus', fn () => …)` → host-specific helpers without forking
-- `Shop::brand()/productInterface()/product()/price()` → fresh fluent builders (`src/Builders/`) that create via `config('shop.models.*')`, never a hardcoded class
-- `Shop::quote()`/`Shop::quotes()` → `QuoteBuilder`/`QuoteService` produce a portable `PriceQuote` DTO (`src/DTOs/`) for checkout handoff — no commerce dependency in either direction. See `docs/usage/builders.md`.
+- `Shop::brand()/productInterface()/product()/price()` → fresh fluent builders (`src/Builders/`) that create via `config('shop.models.*')`, never a hardcoded class. `productInterface()->kind()` sets the generic, inventory-agnostic business classification (`ProductKindEnum`: physical|service|digital|bundle); `brand()/productInterface()/product()` all accept `->extra(array $attributes)` for the structured `extra_attributes` JSON column.
+- `Shop::quote()`/`Shop::quotes()` → `QuoteBuilder`/`QuoteService` produce a portable `PriceQuote` DTO (`src/DTOs/`) for checkout handoff — no commerce dependency in either direction. See `docs/usage.md`.
 
 Storefront session state (wishlist, cart, compare, ratings) is **not** in the catalog core. Host binds `Karnoweb\Shop\Contracts\StorefrontContext` (see `HostStorefrontContext`).
 
@@ -114,6 +114,7 @@ Host `App\Models\Product::getRemainingStockAttribute()` already dual-reads inven
 | 9 | Extensibility pass: Macroable, `model()`, StorefrontContext, ShopEventDispatcher ✅ |
 | 10 | Inventory dual-write + stock column removal ⏳ deferred |
 | 11 | Accounting-like builder surface: `Shop::brand()/productInterface()/product()/price()/quote()`, `PriceQuote` DTO, `QuoteService` ✅ |
+| 12 | Generic product `kind` (physical/service/digital/bundle), `extra_attributes` on `Product`, refined `PriceQuote` (`discountAmount`, `*_price` source strings) ✅ |
 
 ## 10. What must NOT move into shop
 

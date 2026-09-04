@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
+use Karnoweb\Shop\Enums\ProductKindEnum;
 use Karnoweb\Translation\Concerns\HasTranslation;
 
 /**
@@ -36,6 +37,7 @@ class ProductInterface extends BaseModel
         'category_id',
         'slug',
         'type',
+        'kind',
         'brand_id',
         'warning_quantity',
         'max_discount_percent',
@@ -55,6 +57,7 @@ class ProductInterface extends BaseModel
     {
         return [
             'type' => ProductInterfaceTypeEnum::class,
+            'kind' => ProductKindEnum::class,
             'ladder_at' => 'datetime',
             'published_at' => 'datetime',
             'published' => 'boolean',

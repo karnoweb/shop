@@ -57,7 +57,8 @@ class ProductPriceResolver
      * @param  Model  $product  Product model instance
      * @param  int|null  $userGroupId  Soft host user-group key, or null
      * @param  string|null  $tier  Optional portable price tier (e.g. retail, wholesale)
-     * @return array{price: int, source: string} source is one of: user_group|tier|default|base_price
+     * @return array{price: int, source: string} source is one of:
+     *                                           user_group_price|tier_price|default_price|base_price
      */
     public function resolveDetailedForUserGroupId(Model $product, ?int $userGroupId, ?string $tier = null): array
     {
@@ -73,7 +74,7 @@ class ProductPriceResolver
                 ->first();
 
             if ($groupPrice) {
-                return ['price' => (int) $groupPrice->price, 'source' => 'user_group'];
+                return ['price' => (int) $groupPrice->price, 'source' => 'user_group_price'];
             }
         }
 
@@ -86,7 +87,7 @@ class ProductPriceResolver
                 ->first();
 
             if ($tierPrice) {
-                return ['price' => (int) $tierPrice->price, 'source' => 'tier'];
+                return ['price' => (int) $tierPrice->price, 'source' => 'tier_price'];
             }
         }
 
@@ -98,7 +99,7 @@ class ProductPriceResolver
             ->first();
 
         if ($defaultPrice) {
-            return ['price' => (int) $defaultPrice->price, 'source' => 'default'];
+            return ['price' => (int) $defaultPrice->price, 'source' => 'default_price'];
         }
 
         return ['price' => (int) $product->getAttribute('base_price'), 'source' => 'base_price'];

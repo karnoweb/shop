@@ -9,5 +9,6 @@
 
 نقطه ورود کد: `Karnoweb\Shop\Facades\Shop`.
 
-راهنمای انگلیسی «۰ تا ۱۰۰» شامل builderهای جدید (`brand()`, `productInterface()`,
-`product()`, `price()`, `quote()`) و DTO قیمت: [usage/builders.md](usage/builders.md).
+راهنمای انگلیسی «۰ تا ۱۰۰» شامل builderهای فلوئنت (`brand()`, `productInterface()`,
+`product()`, `price()`, `quote()`)، انواع محصول (`kind`)، ویژگی‌های افزوده
+(`extra_attributes`) و DTO قیمت: [usage.md](usage.md).

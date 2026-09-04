@@ -91,6 +91,26 @@ class ProductBuilder
     }
 
     /**
+     * Merge into the structured `extra_attributes` JSON column — the
+     * documented, query-friendly extension point for business-specific data
+     * that doesn't warrant a dedicated column (see docs/usage.md).
+     *
+     * Repeated calls merge (shallow) into the same array rather than
+     * replacing it, so callers can build it up incrementally.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function extra(array $attributes): self
+    {
+        $this->attributes['extra_attributes'] = array_merge(
+            $this->attributes['extra_attributes'] ?? [],
+            $attributes
+        );
+
+        return $this;
+    }
+
+    /**
      * Merge an arbitrary attribute array (escape hatch for host-specific columns).
      *
      * @param  array<string, mixed>  $attributes

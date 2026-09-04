@@ -1,9 +1,9 @@
-# Usage Guide — Builders & Quotes (English)
+# Usage Guide — Catalog, Pricing & Quotes (English)
 
-Canonical "0 to 100" guide to the new Accounting-like, fluent surface on the
-`Shop` facade: catalog builders, price writing, and the quote handoff to
-checkout. Contract-first — inputs, outputs, events, and extension points.
-Implementation details live in `src/`.
+Canonical "0 → 100" guide to the `Shop` facade: the fluent catalog builders,
+generic product kinds, extra attributes, price writing, and the quote
+handoff to checkout/commerce. Contract-first — inputs, outputs, events, and
+extension points. Implementation details live in `src/`.
 
 For the pre-existing, Persian, section-by-section walkthrough of the
 service-based surface (`Shop::products()`, `Shop::filters()`, host
@@ -18,6 +18,9 @@ sync with the Facade's `@method` annotations.
 - [Entry point](#entry-point)
 - [Installation](#installation)
 - [0 → 100: building a catalog](#0--100-building-a-catalog)
+- [Product kinds (generic business classification)](#product-kinds-generic-business-classification)
+- [Variant modeling: ProductInterface vs Product](#variant-modeling-productinterface-vs-product)
+- [Extra attributes (structured JSON extension point)](#extra-attributes-structured-json-extension-point)
 - [Price records (ProductPrice)](#price-records-productprice)
 - [Quote: pure DTO handoff to commerce](#quote-pure-dto-handoff-to-commerce)
 - [Existing pricing API (unchanged)](#existing-pricing-api-unchanged)
@@ -42,12 +45,12 @@ use Karnoweb\Shop\Facades\Shop;
 |---|---|---|
 | Config | `Shop::config($key, $default)` | `mixed` |
 | Model class | `Shop::model($key)` / `Shop::newModel($key)` | `class-string<Model>` / `Model` |
-| Brand builder | `Shop::brand()` | `Builders\BrandBuilder` (new) |
-| ProductInterface builder | `Shop::productInterface()` | `Builders\ProductInterfaceBuilder` (new) |
-| Product builder | `Shop::product()` | `Builders\ProductBuilder` (new) |
-| Price writer | `Shop::price()` | `Builders\ProductPriceBuilder` (new) |
-| Quote reader | `Shop::quote()` | `Builders\QuoteBuilder` (new) |
-| Quote service | `Shop::quotes()` | `Services\QuoteService` (new) |
+| Brand builder | `Shop::brand()` | `Builders\BrandBuilder` |
+| ProductInterface builder | `Shop::productInterface()` | `Builders\ProductInterfaceBuilder` |
+| Product builder | `Shop::product()` | `Builders\ProductBuilder` |
+| Price writer | `Shop::price()` | `Builders\ProductPriceBuilder` |
+| Quote reader | `Shop::quote()` | `Builders\QuoteBuilder` |
+| Quote service | `Shop::quotes()` | `Services\QuoteService` |
 | Pricing (existing) | `Shop::pricing()` | `Services\ProductPriceResolver` |
 | Product cards (existing) | `Shop::products()` | `Services\ProductService` |
 | Filters (existing) | `Shop::filters()` | `Services\ProductFilterService` |
@@ -59,7 +62,7 @@ state.
 
 ## Installation
 
-See the [package README](../../README.md) for the full install steps. Short version:
+See the [package README](../README.md) for the full install steps. Short version:
 
 ```bash
 composer require karnoweb/shop:^13.0
@@ -76,6 +79,9 @@ concrete model.
 
 ## 0 → 100: building a catalog
 
+The full scenario below uses **only public API** and is exercised end to end
+by `tests/Feature/BuilderApiTest.php`.
+
 ```php
 use Karnoweb\Shop\Facades\Shop;
 
@@ -84,21 +90,49 @@ $brand = Shop::brand()
     ->published(true)
     ->create();
 
-$productInterface = Shop::productInterface()
+$pi = Shop::productInterface()
     ->slug('coffee-beans-1kg')
     ->type('simple')
+    ->kind('physical')        // physical|service|digital|bundle
     ->brandId($brand->id)
-    ->categoryId(10)          // soft key — plain integer, never FK-constrained
+    ->categoryId(10)          // soft host key
     ->published(true)
     ->create();
 
 $product = Shop::product()
-    ->productInterfaceId($productInterface->id)
+    ->productInterfaceId($pi->id)
     ->sku('COF-1KG')
+    ->isMain(true)
     ->basePrice(1_200_000)
     ->published(true)
-    ->isMain(true)
     ->create();
+
+Shop::price()
+    ->productId($product->id)
+    ->tier('retail')
+    ->userGroupId(null)
+    ->amount(1_200_000)
+    ->startsAt(now()->subDay())
+    ->endsAt(now()->addMonth())
+    ->save();
+
+Shop::price()
+    ->productId($product->id)
+    ->tier('retail')
+    ->userGroupId(7)
+    ->amount(1_000_000)
+    ->startsAt(now()->subDay())
+    ->endsAt(now()->addMonth())
+    ->save();
+
+$quote = Shop::quote()
+    ->productId($product->id)
+    ->tier('retail')
+    ->userGroupId(7)
+    ->resolve(); // returns PriceQuote DTO
+
+$snapshot = $quote->toCommerceSnapshot();
+// $snapshot is a pure array, stable keys, no external class references.
 ```
 
 **Inputs/outputs:**
@@ -109,19 +143,104 @@ $product = Shop::product()
 | `Shop::productInterface()` | `slug()` (unique), `categoryId()` | Model configured at `shop.models.product_interface` |
 | `Shop::product()` | `productInterfaceId()` | Model configured at `shop.models.product` |
 
-All three also accept `attribute($key, $value)` (single raw attribute) and
-`fill(array $attributes)` (bulk) as an escape hatch for host-specific columns
-without waiting on a new builder method.
+All three also accept `attribute($key, $value)` (single raw attribute),
+`extra(array $attributes)` (structured JSON extension point — see below),
+and `fill(array $attributes)` (bulk) as escape hatches for host-specific
+columns without waiting on a new builder method.
 
 `categoryId()` and `brandId()` are **soft host keys**: plain integers/ids,
 stored without `->constrained()`/`->foreign()`. The host owns the `categories`
 table (or equivalent); this package never creates or reads it directly.
 
+## Product kinds (generic business classification)
+
+`ProductInterface.kind` is a **generic, inventory-agnostic** business
+classification — "what kind of thing is this to the business" — independent
+from `type` (the variant/configuration shape: `simple`/`codding`/`digital`/`service`)
+and independent from stock/inventory (`karnoweb/laravel-inventory` on the host):
+
+| Kind | Meaning |
+|---|---|
+| `physical` (default) | A stockable, shippable good |
+| `service` | A non-stock service (labor, consulting, subscription seat, ...) |
+| `digital` | A non-stock digital good (license key, download, ...) |
+| `bundle` | A composite/kit of other products (composition is host/commerce concern) |
+
+```php
+use Karnoweb\Shop\Enums\ProductKindEnum;
+
+Shop::productInterface()->slug('consulting-hour')->kind('service')->categoryId(20)->create();
+Shop::productInterface()->slug('ebook-license')->kind(ProductKindEnum::DIGITAL)->categoryId(21)->create();
+```
+
+`kind` accepts a plain string or a `ProductKindEnum` case and is cast to
+`ProductKindEnum` on the model (`$productInterface->kind->value`,
+`$productInterface->kind->title()` for a translated label). This package
+never uses `kind` to gate stock/availability logic — that stays entirely
+with the host's inventory integration.
+
+## Variant modeling: ProductInterface vs Product
+
+- **`ProductInterface`** — the parent: shared, translatable attributes
+  (`title`, `description`, `body`), `type`, `kind`, `brand_id`, `category_id`,
+  publishing flags. One row per "product family".
+- **`Product`** — a variant/SKU: `sku`, `base_price`, `is_main`, and
+  variant-specific attribute values. One or more rows per `ProductInterface`
+  (`ProductInterface::hasMany(Product::class)` / `Product::belongsTo(ProductInterface::class)`).
+
+```php
+$pi = Shop::productInterface()->slug('t-shirt')->type('codding')->kind('physical')->categoryId(5)->create();
+
+$small = Shop::product()->productInterfaceId($pi->id)->sku('TSHIRT-S')->basePrice(400_000)->isMain(true)->create();
+$large = Shop::product()->productInterfaceId($pi->id)->sku('TSHIRT-L')->basePrice(420_000)->create();
+```
+
+Pricing, price windows, and quotes are always resolved **per `Product`**
+(per SKU/variant), never per `ProductInterface` — see
+[Price records](#price-records-productprice) below.
+
+## Extra attributes (structured JSON extension point)
+
+Both `ProductInterface.extra_attributes` and `Product.extra_attributes` are
+nullable `json` columns (`Brand.extra_attributes` also exists, for parity),
+cast to `array` on the model — a documented, query-friendly place for
+business-specific data that doesn't warrant a dedicated column:
+
+```php
+$pi = Shop::productInterface()
+    ->slug('coffee-beans-1kg')
+    ->categoryId(10)
+    ->extra(['origin' => 'brazil', 'roast' => 'medium'])
+    ->create();
+
+$product = Shop::product()
+    ->productInterfaceId($pi->id)
+    ->sku('COF-1KG')
+    ->basePrice(1_200_000)
+    ->extra(['weight_grams' => 1000])
+    ->create();
+
+$pi->extra_attributes;      // ['origin' => 'brazil', 'roast' => 'medium']
+$product->extra_attributes; // ['weight_grams' => 1000]
+```
+
+`->extra(array $attributes)` is available on `Shop::brand()`,
+`Shop::productInterface()`, and `Shop::product()`. Repeated calls **merge**
+(shallow) into the same array rather than replacing it:
+
+```php
+Shop::productInterface()->extra(['a' => 1])->extra(['b' => 2]); // extra_attributes === ['a' => 1, 'b' => 2]
+```
+
+Because the column is plain `json`, it stays query-friendly with
+`whereJsonContains()` / `->where('extra_attributes->origin', 'brazil')` on
+supporting databases — no separate EAV tables are introduced.
+
 ## Price records (ProductPrice)
 
 `Shop::price()` is a **writer**, not a resolver — use it to create
-time-windowed price rows. Reading happens through `Shop::pricing()` or
-`Shop::quote()` (below).
+time-windowed price rows, one per `Product` (SKU). Reading happens through
+`Shop::pricing()` or `Shop::quote()` (below).
 
 ```php
 Shop::price()
@@ -144,8 +263,8 @@ Shop::price()
 ```
 
 **Inputs:** `productId()` (required), `tier()`, `userGroupId()` (null =
-default/group-less row), `amount()` (int|float, >= 0), `startsAt()` /
-`endsAt()` (`DateTimeInterface|string|null`).
+default/group-less row — a **soft host key**, never FK-constrained), `amount()`
+(int|float, >= 0), `startsAt()` / `endsAt()` (`DateTimeInterface|string|null`).
 
 **Output:** the created model configured at `shop.models.product_price`.
 
@@ -157,6 +276,8 @@ resolve to an existing row on the model configured at `shop.models.product`.
 
 `Shop::quote()` resolves a **portable, immutable `PriceQuote` DTO** — no
 dependency on `karnoweb/commerce` or any host class, in either direction.
+It accepts `userGroupId`/`tier` **explicitly**; it never assumes a host user
+object shape (no `auth()->user()`, no `data_get($user, 'profile...')`).
 
 ```php
 $quote = Shop::quote()
@@ -173,41 +294,41 @@ $quote = Shop::quote()
 
 | Field | Type | Meaning |
 |---|---|---|
-| `productId` | `int` | Product the quote is for |
-| `unitPrice` | `int` | Price resolved by `ProductPriceResolver` (before any campaign adjustment) |
-| `basePrice` | `int` | The product's raw `base_price` column |
-| `finalPrice` | `int` | Price after optional campaign adjustment (equals `unitPrice` when no adjuster is bound) |
-| `hasDiscount` | `bool` | Whether a campaign adjustment changed the price |
-| `discountPercent` | `int\|float\|null` | Discount percent, when known |
-| `campaignId` | `int\|null` | Campaign id, when the host's `CampaignPriceAdjuster` reports one |
+| `productId` | `int` | Product (SKU) the quote is for |
 | `tier` | `string\|null` | The tier the caller asked for |
-| `userGroupId` | `int\|null` | The user group the caller asked for |
-| `source` | `string` | One of `"user_group"`, `"tier"`, `"default"`, `"base_price"` — which strategy matched |
+| `userGroupId` | `int\|null` | The soft host user-group key the caller asked for |
+| `basePrice` | `int` | Price resolved by `ProductPriceResolver` for this tier/group — see `source` — before any campaign adjustment |
+| `finalPrice` | `int` | Price after optional campaign adjustment (equals `basePrice` when no adjuster is bound, or none applied) |
+| `hasDiscount` | `bool` | Whether a campaign adjustment changed the price |
+| `discountAmount` | `int` | `basePrice - finalPrice`, always `>= 0` |
+| `discountPercent` | `float\|null` | Discount percent, when known/computable |
+| `campaignId` | `int\|null` | Campaign id, when the host's `CampaignPriceAdjuster` reports one |
+| `source` | `string` | Which strategy produced `basePrice`: `"user_group_price"` \| `"tier_price"` \| `"default_price"` \| `"base_price"` |
 
 ```php
-$quote->unitPrice;      // int
-$quote->campaignId;     // ?int
-$quote->source;         // "user_group" | "tier" | "default" | "base_price"
+$quote->basePrice;   // int
+$quote->source;      // "user_group_price" | "tier_price" | "default_price" | "base_price"
 $quote->toCommerceSnapshot(); // array safe to store in commerce OrderItem.extra_attributes
 ```
 
 ### Handoff to commerce
 
-`PriceQuote::toCommerceSnapshot()` returns a **plain array** (no objects,
-no package classes) — the contract the host/commerce layer can depend on:
+`PriceQuote::toCommerceSnapshot()` returns a **plain array** of
+scalars/`null` (no objects, no package classes) — the stable contract the
+host/commerce layer can depend on:
 
 ```php
 [
     'product_id' => 123,
-    'unit_price' => 1_000_000,
-    'base_price' => 1_200_000,
-    'final_price' => 1_000_000,
-    'has_discount' => false,
-    'discount_percent' => null,
-    'campaign_id' => null,
     'tier' => 'retail',
     'user_group_id' => 7,
-    'source' => 'user_group',
+    'base_price' => 1_000_000,
+    'final_price' => 1_000_000,
+    'has_discount' => false,
+    'discount_amount' => 0,
+    'discount_percent' => null,
+    'campaign_id' => null,
+    'source' => 'user_group_price',
 ]
 ```
 
@@ -240,6 +361,7 @@ don't have (or don't want to assume) a host user object:
 
 ```php
 Shop::pricing()->resolveForUserGroupId($product, userGroupId: 7, tier: 'retail'); // int
+Shop::pricing()->resolveDetailedForUserGroupId($product, userGroupId: 7, tier: 'retail'); // ['price' => int, 'source' => string]
 ```
 
 `resolve()` is now a thin backward-compatible adapter over
@@ -251,7 +373,7 @@ signature. Order: user group → explicit tier → default (null-group) window �
 
 `Shop::products()` (card pricing/flags) and `Shop::filters()` (category
 tree, facets, price range) are untouched. See
-[products.md](products.md) and [filters.md](filters.md).
+[usage/products.md](usage/products.md) and [usage/filters.md](usage/filters.md).
 
 ## Validation & exceptions
 
@@ -277,8 +399,11 @@ try {
 ## Events
 
 Domain events dispatch **after DB commit** via `ShopEventDispatcher`
-(immediately if there is no open transaction). `Shop::product()->create()`
-dispatches `ProductSaved` automatically:
+(immediately if there is no open transaction).
+
+| Event | Fired by | Payload |
+|---|---|---|
+| `ProductSaved` | `Shop::product()->create()` | `productId`, `productInterfaceId` |
 
 ```php
 use Karnoweb\Shop\Events\ProductSaved;
@@ -291,8 +416,8 @@ Event::listen(ProductSaved::class, function (ProductSaved $event) {
 
 Creating records through the raw Eloquent models (bypassing the builders)
 does **not** fire this event automatically — dispatch it yourself via
-`ShopEventDispatcher::dispatch(new ProductSaved(...))`, same as before this
-pass. See [host-integration.md](host-integration.md).
+`ShopEventDispatcher::dispatch(new ProductSaved(...))`. See
+[usage/host-integration.md](usage/host-integration.md).
 
 ## Extension points (host bridges)
 
@@ -301,7 +426,7 @@ without them, just with reduced behavior:
 
 | Contract | Used by | Effect when bound |
 |---|---|---|
-| `Contracts\CampaignPriceAdjuster` | `Shop::products()`, `Shop::quote()` / `QuoteService` | Adjusts `finalPrice`/`hasDiscount`/`discountPercent`/`campaignId` on top of the resolved `unitPrice` |
+| `Contracts\CampaignPriceAdjuster` | `Shop::products()`, `Shop::quote()` / `QuoteService` | Adjusts `finalPrice`/`hasDiscount`/`discountAmount`/`discountPercent`/`campaignId` on top of the resolved `basePrice` |
 | `Contracts\StorefrontContext` | `Shop::products()` | Supplies wishlist/cart/compare/rating flags for product cards |
 
 Binding is entirely the host's job (typically in a host service provider);
@@ -320,6 +445,8 @@ builders:
 - **Orders, invoices, payments** — owned by `karnoweb/commerce`. `PriceQuote`
   is deliberately a plain array/DTO so commerce/host code can consume it
   without this package depending on commerce, and vice versa.
+- **Bundle composition** — `kind('bundle')` is classification only; which
+  products make up a bundle, and how it's priced/fulfilled, is host/commerce.
 - **Storefront session state** — wishlist/cart/compare/rating live behind
   `StorefrontContext`, bound by the host.
 - **SMS, mail, or any other host action** — this package only reads/writes

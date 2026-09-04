@@ -31,6 +31,7 @@ class Product extends BaseModel
         'length',
         'width',
         'searchable_title',
+        'extra_attributes',
         'product_interface_id',
     ];
 
@@ -48,6 +49,7 @@ class Product extends BaseModel
             'maximum_sale' => 'integer',
             'stock' => 'integer',
             'base_price' => 'decimal:0',
+            'extra_attributes' => 'array',
         ];
     }
 

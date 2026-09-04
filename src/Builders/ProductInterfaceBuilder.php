@@ -6,6 +6,7 @@ namespace Karnoweb\Shop\Builders;
 
 use Illuminate\Database\Eloquent\Model;
 use Karnoweb\Shop\Enums\ProductInterfaceTypeEnum;
+use Karnoweb\Shop\Enums\ProductKindEnum;
 use Karnoweb\Shop\Models\ProductInterface;
 
 /**
@@ -19,6 +20,7 @@ use Karnoweb\Shop\Models\ProductInterface;
  * Shop::productInterface()
  *     ->slug('coffee-beans-1kg')
  *     ->type('simple')
+ *     ->kind('physical')
  *     ->brandId($brand->id)
  *     ->categoryId(10)
  *     ->published(true)
@@ -37,10 +39,24 @@ class ProductInterfaceBuilder
         return $this;
     }
 
-    /** Set the catalog type (e.g. 'simple', 'codding', 'digital', 'service'). */
+    /** Set the catalog type (e.g. 'simple', 'codding', 'digital', 'service') — variant/configuration shape. */
     public function type(string|ProductInterfaceTypeEnum $type): self
     {
         $this->attributes['type'] = $type instanceof ProductInterfaceTypeEnum ? $type->value : $type;
+
+        return $this;
+    }
+
+    /**
+     * Set the generic, inventory-agnostic business classification:
+     * 'physical'|'service'|'digital'|'bundle' (see {@see ProductKindEnum}).
+     *
+     * Independent from {@see self::type()} — `kind` is "what kind of thing is
+     * this to the business", not the variant/configuration shape.
+     */
+    public function kind(string|ProductKindEnum $kind): self
+    {
+        $this->attributes['kind'] = $kind instanceof ProductKindEnum ? $kind->value : $kind;
 
         return $this;
     }
@@ -81,6 +97,26 @@ class ProductInterfaceBuilder
     public function attribute(string $key, mixed $value): self
     {
         $this->attributes[$key] = $value;
+
+        return $this;
+    }
+
+    /**
+     * Merge into the structured `extra_attributes` JSON column — the
+     * documented, query-friendly extension point for business-specific data
+     * that doesn't warrant a dedicated column (see docs/usage.md).
+     *
+     * Repeated calls merge (shallow) into the same array rather than
+     * replacing it, so callers can build it up incrementally.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function extra(array $attributes): self
+    {
+        $this->attributes['extra_attributes'] = array_merge(
+            $this->attributes['extra_attributes'] ?? [],
+            $attributes
+        );
 
         return $this;
     }

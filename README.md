@@ -46,7 +46,8 @@ $tree  = Shop::filters()->getCategoryTree();
 
 بیشتر: [docs/usage/README.md](docs/usage/README.md)
 
-راهنمای انگلیسی «۰ تا ۱۰۰» با API فلوئنت (builder) جدید: [docs/usage/builders.md](docs/usage/builders.md)
+راهنمای انگلیسی «۰ تا ۱۰۰» با API فلوئنت (builder)، انواع محصول (`kind`) و
+ویژگی‌های افزوده (`extra_attributes`): [docs/usage.md](docs/usage.md)
 
 ## License
 

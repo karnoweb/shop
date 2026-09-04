@@ -19,6 +19,12 @@ return [
             'digital' => 'Digital',
             'service' => 'Service',
         ],
+        'kind' => [
+            'physical' => 'Physical',
+            'service' => 'Service',
+            'digital' => 'Digital',
+            'bundle' => 'Bundle',
+        ],
     ],
     'campaign' => [
         'type' => [

@@ -30,39 +30,44 @@ readonly class QuoteService
      */
     public function resolve(Model $product, ?int $userGroupId = null, ?string $tier = null): PriceQuote
     {
-        $basePrice = (int) $product->getAttribute('base_price');
-
         $detail = $this->priceResolver->resolveDetailedForUserGroupId($product, $userGroupId, $tier);
 
-        $unitPrice = $detail['price'];
+        $basePrice = $detail['price'];
         $source = $detail['source'];
 
-        $finalPrice = $unitPrice;
+        $finalPrice = $basePrice;
         $hasDiscount = false;
+        $discountAmount = 0;
         $discountPercent = null;
         $campaignId = null;
 
         if ($this->campaignPriceAdjuster !== null) {
-            $adjusted = $this->campaignPriceAdjuster->adjust($product, null, $unitPrice);
+            $adjusted = $this->campaignPriceAdjuster->adjust($product, null, $basePrice);
 
             if ($adjusted !== null) {
-                $finalPrice = (int) ($adjusted['final_price'] ?? $unitPrice);
+                $finalPrice = (int) ($adjusted['final_price'] ?? $basePrice);
                 $hasDiscount = (bool) ($adjusted['has_discount'] ?? false);
-                $discountPercent = $adjusted['discount_percent'] ?? null;
                 $campaignId = isset($adjusted['campaign_id']) ? (int) $adjusted['campaign_id'] : null;
+                $discountAmount = max(0, $basePrice - $finalPrice);
+
+                $discountPercent = isset($adjusted['discount_percent'])
+                    ? (float) $adjusted['discount_percent']
+                    : ($discountAmount > 0 && $basePrice > 0
+                        ? round(($discountAmount / $basePrice) * 100, 2)
+                        : null);
             }
         }
 
         return new PriceQuote(
             productId: (int) $product->getKey(),
-            unitPrice: $unitPrice,
+            tier: $tier,
+            userGroupId: $userGroupId,
             basePrice: $basePrice,
             finalPrice: $finalPrice,
             hasDiscount: $hasDiscount,
+            discountAmount: $discountAmount,
             discountPercent: $discountPercent,
             campaignId: $campaignId,
-            tier: $tier,
-            userGroupId: $userGroupId,
             source: $source,
         );
     }

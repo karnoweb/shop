@@ -19,6 +19,12 @@ return [
             'digital' => 'دیجیتال',
             'service' => 'خدمت',
         ],
+        'kind' => [
+            'physical' => 'فیزیکی',
+            'service' => 'خدمت',
+            'digital' => 'دیجیتال',
+            'bundle' => 'باندل',
+        ],
     ],
     'campaign' => [
         'type' => [
